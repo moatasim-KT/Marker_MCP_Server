@@ -245,7 +245,7 @@ class Block(BaseModel):
             block = document.get_block(block_id)
             if block is None or not hasattr(block, "removed") or block.removed:
                 continue
-            if (not block_types or block.block_type in block_types) and not block.removed:
+            if not block_types or block.block_type in block_types:
                 blocks.append(block)
             if hasattr(block, "contained_blocks"):
                 blocks += block.contained_blocks(document, block_types)
