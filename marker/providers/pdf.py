@@ -26,14 +26,6 @@ from marker.schema.text.char import Char
 
 # DEBUG: Test direct instantiation of Char, Span, Line
 from marker.schema.polygon import PolygonBox
-
-def _test_block_instantiation():
-    poly = PolygonBox(polygon=[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0]])
-    c = Char(polygon=poly, block_description="desc", text="a", idx=0)
-    s = Span(polygon=poly, block_description="desc", text="abc", font="Arial", font_weight=400.0, font_size=12.0, minimum_position=0, maximum_position=2, formats=["plain"], has_superscript=False, has_subscript=False)
-    l = Line(polygon=poly, block_description="desc", page_id=0)
-    return c, s, l
-
 # Ignore pypdfium2 warning about form flattening
 logging.getLogger("pypdfium2").setLevel(logging.ERROR)
 
