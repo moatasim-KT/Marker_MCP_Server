@@ -683,9 +683,9 @@
         ]
       ],
       "block_metadata": {
-        "llm_request_count": 0,
+        "llm_request_count": 1,
         "llm_error_count": 0,
-        "llm_tokens_used": 0
+        "llm_tokens_used": 28848
       }
     },
     {
@@ -734,9 +734,9 @@
         ]
       ],
       "block_metadata": {
-        "llm_request_count": 1,
+        "llm_request_count": 0,
         "llm_error_count": 0,
-        "llm_tokens_used": 55569
+        "llm_tokens_used": 0
       }
     },
     {
@@ -1173,7 +1173,7 @@
       "block_metadata": {
         "llm_request_count": 1,
         "llm_error_count": 2,
-        "llm_tokens_used": 19487
+        "llm_tokens_used": 15700
       }
     },
     {
@@ -1327,9 +1327,9 @@
         ]
       ],
       "block_metadata": {
-        "llm_request_count": 1,
+        "llm_request_count": 0,
         "llm_error_count": 1,
-        "llm_tokens_used": 16554
+        "llm_tokens_used": 0
       }
     },
     {

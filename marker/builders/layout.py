@@ -24,7 +24,7 @@ class LayoutBuilder(BaseBuilder):
         "Default is None, which will use the default batch size for the model.",
     ] = None
     force_layout_block: Annotated[
-        str,
+        Optional[str],
         "Skip layout and force every page to be treated as a specific block type.",
     ] = None
     disable_tqdm: Annotated[
@@ -42,7 +42,10 @@ class LayoutBuilder(BaseBuilder):
             # Assign the full content of every page to a single layout type
             layout_results = self.forced_layout(document.pages)
         else:
-            layout_results = self.surya_layout(document.pages)
+            # Filter out None images for type safety
+            images = [page.get_image() for page in document.pages]
+            images = [img for img in images if img is not None]
+            layout_results = self.surya_layout(document.pages, images)
         self.add_blocks_to_pages(document.pages, layout_results)
 
     def get_batch_size(self):
@@ -54,15 +57,18 @@ class LayoutBuilder(BaseBuilder):
 
     def forced_layout(self, pages: List[PageGroup]) -> List[LayoutResult]:
         layout_results = []
+        # Use a default label if force_layout_block is None
+        default_label = "Text"
+        label = self.force_layout_block if self.force_layout_block is not None else default_label
         for page in pages:
             layout_results.append(
                 LayoutResult(
                     image_bbox=page.polygon.bbox,
                     bboxes=[
                         LayoutBox(
-                            label=self.force_layout_block,
+                            label=label,
                             position=0,
-                            top_k={self.force_layout_block: 1},
+                            top_k={label: 1.0},
                             polygon=page.polygon.polygon,
                         ),
                     ],
@@ -71,10 +77,10 @@ class LayoutBuilder(BaseBuilder):
             )
         return layout_results
 
-    def surya_layout(self, pages: List[PageGroup]) -> List[LayoutResult]:
+    def surya_layout(self, pages: List[PageGroup], images: List) -> List[LayoutResult]:
         self.layout_model.disable_tqdm = self.disable_tqdm
         layout_results = self.layout_model(
-            [p.get_image(highres=False) for p in pages],
+            images,
             batch_size=int(self.get_batch_size()),
         )
         return layout_results
@@ -97,7 +103,7 @@ class LayoutBuilder(BaseBuilder):
                     layout_page_size, provider_page_size
                 )
                 layout_block.top_k = {
-                    BlockTypes[label]: prob for (label, prob) in bbox.top_k.items()
+                    BlockTypes[label]: float(prob) for (label, prob) in (bbox.top_k.items() if bbox.top_k is not None else [])
                 }
                 page.add_structure(layout_block)
 

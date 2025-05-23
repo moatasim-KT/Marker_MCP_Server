@@ -33,12 +33,12 @@ class StructureBuilder(BaseBuilder):
 
     def group_caption_blocks(self, page: PageGroup):
         gap_threshold_px = self.gap_threshold * page.polygon.height
-        static_page_structure = page.structure.copy()
+        static_page_structure = page.structure.copy() if page.structure is not None else []
         remove_ids = list()
 
         for i, block_id in enumerate(static_page_structure):
             block = page.get_block(block_id)
-            if block.block_type not in [BlockTypes.Table, BlockTypes.Figure, BlockTypes.Picture]:
+            if block is None or block.block_type not in [BlockTypes.Table, BlockTypes.Figure, BlockTypes.Picture]:
                 continue
 
             if block.id in remove_ids:
@@ -48,8 +48,8 @@ class StructureBuilder(BaseBuilder):
             selected_polygons = [block.polygon]
             caption_types = [BlockTypes.Caption, BlockTypes.Footnote]
 
-            prev_block = page.get_prev_block(block)
-            next_block = page.get_next_block(block)
+            prev_block = page.get_prev_block(block) if block is not None else None
+            next_block = page.get_next_block(block) if block is not None else None
 
             if prev_block and \
                 prev_block.block_type in caption_types and \
@@ -66,23 +66,25 @@ class StructureBuilder(BaseBuilder):
 
             if len(block_structure) > 1:
                 # Create a merged block
-                new_block_cls = get_block_class(BlockTypes[block.block_type.name + "Group"])
-                new_polygon = block.polygon.merge(selected_polygons)
-                group_block = page.add_block(new_block_cls, new_polygon)
-                group_block.structure = block_structure
+                group_type_name = block.block_type.name + "Group" if block.block_type is not None else None
+                if group_type_name is not None:
+                    new_block_cls = get_block_class(BlockTypes[group_type_name])
+                    new_polygon = block.polygon.merge(selected_polygons)
+                    group_block = page.add_block(new_block_cls, new_polygon)
+                    group_block.structure = block_structure
 
-                # Update the structure of the page to reflect the new block
-                page.update_structure_item(block_id, group_block.id)
-                remove_ids.extend(block_structure)
+                    # Update the structure of the page to reflect the new block
+                    page.update_structure_item(block_id, group_block.id)
+                    remove_ids.extend(block_structure)
         page.remove_structure_items(remove_ids)
 
     def group_lists(self, page: PageGroup):
         gap_threshold_px = self.list_gap_threshold * page.polygon.height
-        static_page_structure = page.structure.copy()
+        static_page_structure = page.structure.copy() if page.structure is not None else []
         remove_ids = list()
         for i, block_id in enumerate(static_page_structure):
             block = page.get_block(block_id)
-            if block.block_type not in [BlockTypes.ListItem]:
+            if block is None or block.block_type not in [BlockTypes.ListItem]:
                 continue
 
             if block.id in remove_ids:
@@ -91,9 +93,9 @@ class StructureBuilder(BaseBuilder):
             block_structure = [block_id]
             selected_polygons = [block.polygon]
 
-            for j, next_block_id in enumerate(page.structure[i + 1:]):
+            for j, next_block_id in enumerate(page.structure[i + 1:] if page.structure is not None else []):
                 next_block = page.get_block(next_block_id)
-                if all([
+                if next_block is not None and all([
                     next_block.block_type == BlockTypes.ListItem,
                     next_block.polygon.minimum_gap(selected_polygons[-1]) < gap_threshold_px
                 ]):
@@ -115,9 +117,11 @@ class StructureBuilder(BaseBuilder):
 
     def unmark_lists(self, page: PageGroup):
         # If lists aren't grouped, unmark them as list items
+        if page.structure is None:
+            return
         for block_id in page.structure:
             block = page.get_block(block_id)
-            if block.block_type == BlockTypes.ListItem:
+            if block is not None and block.block_type == BlockTypes.ListItem:
                 generated_block = Text(
                     polygon=block.polygon,
                     page_id=block.page_id,

@@ -47,7 +47,8 @@ def verify_config_keys(obj):
 
     none_vals = ""
     for attr_name, annotation in annotations.items():
-        if isinstance(annotation, type(Annotated[str, ""])):
+        # Only check for type, not Annotated
+        if getattr(annotation, "__origin__", None) is str:
             value = getattr(obj, attr_name)
             if value is None:
                 none_vals += f"{attr_name}, "
@@ -92,7 +93,7 @@ def parse_range_str(range_str: str) -> List[int]:
     return page_lst
 
 
-def matrix_intersection_area(boxes1: List[List[float]], boxes2: List[List[float]]) -> np.ndarray:
+def matrix_intersection_area(boxes1: np.ndarray, boxes2: np.ndarray) -> np.ndarray:
     if len(boxes1) == 0 or len(boxes2) == 0:
         return np.zeros((len(boxes1), len(boxes2)))
 
@@ -113,7 +114,7 @@ def matrix_intersection_area(boxes1: List[List[float]], boxes2: List[List[float]
     return width * height  # Shape: (N, M)
 
 
-def matrix_distance(boxes1: List[List[float]], boxes2: List[List[float]]) -> np.ndarray:
+def matrix_distance(boxes1: np.ndarray, boxes2: np.ndarray) -> np.ndarray:
     if len(boxes2) == 0:
         return np.zeros((len(boxes1), 0))
     if len(boxes1) == 0:
@@ -122,7 +123,7 @@ def matrix_distance(boxes1: List[List[float]], boxes2: List[List[float]]) -> np.
     boxes1 = np.array(boxes1)  # Shape: (N, 4)
     boxes2 = np.array(boxes2)  # Shape: (M, 4)
 
-    boxes1_centers = (boxes1[:, :2] + boxes1[:, 2:]) / 2 # Shape: (M, 2)
+    boxes1_centers = (boxes1[:, :2] + boxes1[:, 2:]) / 2 # Shape: (N, 2)
     boxes2_centers = (boxes2[:, :2] + boxes2[:, 2:]) / 2  # Shape: (M, 2)
 
     boxes1_centers = boxes1_centers[:, np.newaxis, :]  # Shape: (N, 1, 2)

@@ -77,37 +77,40 @@ Adversarial training <i>(AT)</i> <a href='#page-9-1'>[23]</a>, which aims to min
         if not self.redo_inline_math:
             return
 
+        block_types = self.block_types if self.block_types is not None else ()
+        additional_block_types = self.additional_block_types if self.additional_block_types is not None else ()
+
         # Get inline math blocks
-        inline_blocks: List[InlineMath] = [
+        inline_blocks: List[Tuple[PageGroup, Block]] = [
             (page, block)
             for page in document.pages
-            for block in page.contained_blocks(document, self.block_types)
+            for block in page.contained_blocks(document, list(block_types))
         ]
 
         # Get other blocks with detected math in them
-        detected_blocks = [
+        detected_blocks: List[Tuple[PageGroup, Block]] = [
             (page, block)
             for page in document.pages
             for block in page.contained_blocks(
                 document,
-                (
+                [
                     BlockTypes.Text,
                     BlockTypes.Caption,
                     BlockTypes.SectionHeader,
                     BlockTypes.Footnote,
                     BlockTypes.ListItem,
-                ),
+                ],
             )
             if any(
                 [
-                    b.formats and "math" in b.formats
-                    for b in block.contained_blocks(document, (BlockTypes.Line,))
+                    hasattr(b, "formats") and b.formats and "math" in b.formats  # type: ignore[attr-defined]
+                    for b in block.contained_blocks(document, [BlockTypes.Line])
                 ]
             )
         ]
 
         # If a page has enough math blocks, assume all blocks can contain math
-        additional_text_blocks = []
+        additional_text_blocks: List[Tuple[PageGroup, Block]] = []
         for page in document.pages:
             # Check for inline math blocks
             page_inlinemath_blocks = [
@@ -120,7 +123,7 @@ Adversarial training <i>(AT)</i> <a href='#page-9-1'>[23]</a>, which aims to min
 
             # Find all potential blocks
             additional_blocks = page.contained_blocks(
-                document, self.additional_block_types + self.block_types
+                document, list(additional_block_types) + list(block_types)
             )
 
             # Check if the ratio of math blocks to additional blocks is high enough
@@ -131,10 +134,20 @@ Adversarial training <i>(AT)</i> <a href='#page-9-1'>[23]</a>, which aims to min
                 continue
 
             for b in additional_blocks:
-                if b not in detected_blocks and b not in inline_blocks:
+                if (
+                    (page, b) not in detected_blocks
+                    and (page, b) not in inline_blocks
+                ):
                     additional_text_blocks.append((page, b))
 
-        inference_blocks = inline_blocks + detected_blocks + additional_text_blocks
+        # Only process blocks that are not pure math (skip if block is only math/latex)
+        def is_mostly_math(block):
+            text = block.raw_text(document)
+            # Heuristic: if more than 70% of the text is math/latex, skip LLM
+            math_chars = sum(1 for c in text if c in "$\\{}^_[]|" or c.isdigit())
+            return len(text) > 0 and math_chars / len(text) > 0.7
+
+        inference_blocks = [b for b in (inline_blocks + detected_blocks + additional_text_blocks) if not is_mostly_math(b[1])]
 
         # Don't show progress if there are no blocks to process
         total_blocks = len(inference_blocks)
@@ -162,8 +175,8 @@ Adversarial training <i>(AT)</i> <a href='#page-9-1'>[23]</a>, which aims to min
         return html
 
     def get_block_lines(self, block: Block, document: Document) -> Tuple[list, list]:
-        text_lines = block.contained_blocks(document, (BlockTypes.Line,))
-        extracted_lines = [line.formatted_text(document) for line in text_lines]
+        text_lines = block.contained_blocks(document, [BlockTypes.Line])
+        extracted_lines = [getattr(line, "formatted_text", lambda d: "")(document) for line in text_lines]  # type: ignore[attr-defined]
         return text_lines, extracted_lines
 
     def process_rewriting(self, document: Document, page: PageGroup, block: Block):
@@ -171,6 +184,9 @@ Adversarial training <i>(AT)</i> <a href='#page-9-1'>[23]</a>, which aims to min
         prompt = self.text_math_rewriting_prompt.replace("{extracted_html}", block_text)
 
         image = self.extract_image(document, block)
+        if self.llm_service is None:
+            block.update_metadata(llm_error_count=1)
+            return
         response = self.llm_service(prompt, image, block, LLMTextSchema)
 
         if not response or "corrected_html" not in response:
@@ -190,7 +206,9 @@ Adversarial training <i>(AT)</i> <a href='#page-9-1'>[23]</a>, which aims to min
             block.update_metadata(llm_error_count=1)
             return
 
-        block.html = corrected_html
+        # Only assign html if the attribute exists
+        if hasattr(block, "html"):
+            block.html = corrected_html  # type: ignore[attr-defined]
 
 
 class LLMTextSchema(BaseModel):

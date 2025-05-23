@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Annotated
+from typing import Annotated, Optional, List, Dict, Any
 
 from marker.logger import get_logger
 from surya.layout import LayoutPredictor
@@ -25,7 +25,7 @@ class LLMLayoutBuilder(LayoutBuilder):
     """
 
     google_api_key: Annotated[
-        str,
+        Optional[str],
         "The Google API key to use for the Gemini model.",
     ] = settings.GOOGLE_API_KEY
     confidence_threshold: Annotated[
@@ -92,6 +92,11 @@ Potential labels:
 Respond only with one of `Figure`, `Picture`, `ComplexRegion`, `Table`, or `Form`.
 """
 
+    force_layout_block: Annotated[
+        Optional[str],
+        "Skip layout and force every page to be treated as a specific block type.",
+    ] = None
+
     def __init__(
         self, layout_model: LayoutPredictor, llm_service: BaseService, config=None
     ):
@@ -111,39 +116,44 @@ Respond only with one of `Figure`, `Picture`, `ComplexRegion`, `Table`, or `Form
         with ThreadPoolExecutor(max_workers=self.max_concurrency) as executor:
             futures = []
             for page in document.pages:
-                for block_id in page.structure:
+                for block_id in page.structure or []:
                     block = page.get_block(block_id)
-                    if block.top_k:
-                        confidence = block.top_k.get(block.block_type)
-                        # Case when the block is detected as a different type with low confidence
-                        if confidence < self.confidence_threshold:
-                            futures.append(
-                                executor.submit(
-                                    self.process_block_topk_relabeling,
-                                    document,
-                                    page,
-                                    block,
-                                )
+                    if block is None or block.top_k is None or block.block_type is None:
+                        continue
+                    confidence = block.top_k.get(block.block_type)
+                    if confidence is None:
+                        continue
+                    # Case when the block is detected as a different type with low confidence
+                    if confidence < self.confidence_threshold:
+                        futures.append(
+                            executor.submit(
+                                self.process_block_topk_relabeling,
+                                document,
+                                page,
+                                block,
                             )
-                        # Case when the block is detected as a picture or figure, but is actually complex
-                        elif (
-                            block.block_type
-                            in (
-                                BlockTypes.Picture,
-                                BlockTypes.Figure,
-                                BlockTypes.SectionHeader,
+                        )
+                    # Case when the block is detected as a picture or figure, but is actually complex
+                    elif (
+                        block.block_type in (
+                            BlockTypes.Picture,
+                            BlockTypes.Figure,
+                            BlockTypes.SectionHeader,
+                        )
+                        and hasattr(block, "polygon")
+                        and hasattr(page, "polygon")
+                        and getattr(block.polygon, "height", None) is not None
+                        and getattr(page.polygon, "height", None) is not None
+                        and block.polygon.height > page.polygon.height * self.picture_height_threshold
+                    ):
+                        futures.append(
+                            executor.submit(
+                                self.process_block_complex_relabeling,
+                                document,
+                                page,
+                                block,
                             )
-                            and block.polygon.height
-                            > page.polygon.height * self.picture_height_threshold
-                        ):
-                            futures.append(
-                                executor.submit(
-                                    self.process_block_complex_relabeling,
-                                    document,
-                                    page,
-                                    block,
-                                )
-                            )
+                        )
 
             for future in as_completed(futures):
                 future.result()  # Raise exceptions if any occurred
@@ -154,14 +164,17 @@ Respond only with one of `Figure`, `Picture`, `ComplexRegion`, `Table`, or `Form
     def process_block_topk_relabeling(
         self, document: Document, page: PageGroup, block: Block
     ):
-        topk_types = list(block.top_k.keys())
+        if block.top_k is None:
+            return None
+        topk_types = list(block.top_k.keys()) if block.top_k else []
         potential_labels = ""
         for block_type in topk_types:
             label_cls = get_block_class(block_type)
-            potential_labels += f"- `{block_type}` - {label_cls.model_fields['block_description'].default}\n"
+            block_desc = getattr(label_cls.model_fields.get('block_description'), 'default', '') if label_cls and hasattr(label_cls, 'model_fields') else ''
+            potential_labels += f"- `{block_type}` - {block_desc}\n"
 
         topk = ""
-        for k, v in block.top_k.items():
+        for k, v in (block.top_k.items() if block.top_k else []):
             topk += f"- `{k}` - Confidence {round(v, 3)}\n"
 
         prompt = self.topk_relabelling_prompt.replace(
@@ -182,7 +195,8 @@ Respond only with one of `Figure`, `Picture`, `ComplexRegion`, `Table`, or `Form
             BlockTypes.Form,
         ]:
             label_cls = get_block_class(block_type)
-            potential_labels += f"- `{block_type}` - {label_cls.model_fields['block_description'].default}\n"
+            block_desc = getattr(label_cls.model_fields.get('block_description'), 'default', '') if label_cls and hasattr(label_cls, 'model_fields') else ''
+            potential_labels += f"- `{block_type}` - {block_desc}\n"
 
         complex_prompt = self.complex_relabeling_prompt.replace(
             "{potential_labels}", potential_labels
@@ -190,31 +204,37 @@ Respond only with one of `Figure`, `Picture`, `ComplexRegion`, `Table`, or `Form
         return self.process_block_relabeling(document, page, block, complex_prompt)
 
     def process_block_relabeling(
-        self, document: Document, page: PageGroup, block: Block, prompt: str
+        self, document: Document, page: PageGroup, block: Optional[Block], prompt: str
     ):
+        if block is None:
+            return None
         image = self.extract_image(document, block)
-
-        response = self.llm_service(prompt, image, block, LayoutSchema)
+        response = self.llm_service(prompt, image, block, LayoutSchema) if block is not None else None
         generated_label = None
-        if response and "label" in response:
+        if response and isinstance(response, dict) and "label" in response:
             generated_label = response["label"]
 
         if (
             generated_label
+            and block is not None
             and generated_label != str(block.block_type)
             and generated_label in [str(t) for t in BlockTypes]
         ):
             generated_block_class = get_block_class(BlockTypes[generated_label])
+            block_description = getattr(generated_block_class.model_fields.get('block_description'), 'default', '')
             generated_block = generated_block_class(
                 polygon=block.polygon,
                 page_id=block.page_id,
                 structure=block.structure,
+                block_description=block_description
             )
             page.replace_block(block, generated_block)
 
     def extract_image(
-        self, document: Document, image_block: Block, expand: float = 0.01
+        self, document: Document, image_block: Optional[Block], expand: float = 0.01
     ):
+        if image_block is None:
+            return None
         return image_block.get_image(
             document, highres=False, expansion=(expand, expand)
         )

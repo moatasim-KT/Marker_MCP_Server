@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Sequence
+from typing import List, Sequence, Optional
 
 from pydantic import BaseModel
 
@@ -31,6 +31,8 @@ class Document(BaseModel):
 
     def get_block(self, block_id: BlockId):
         page = self.get_page(block_id.page_id)
+        if page is None:
+            return None
         block = page.get_block(block_id)
         if block:
             return block
@@ -42,42 +44,53 @@ class Document(BaseModel):
                 return page
         return None
 
-    def get_next_block(self, block: Block, ignored_block_types: List[BlockTypes] = None):
+    def get_next_block(self, block: Block, ignored_block_types: Optional[List[BlockTypes]] = None):
         if ignored_block_types is None:
             ignored_block_types = []
         next_block = None
-
-        # Try to find the next block in the current page
         page = self.get_page(block.page_id)
-        next_block = page.get_next_block(block, ignored_block_types)
-        if next_block:
-            return next_block
-
-        # If no block found, search subsequent pages
-        for page in self.pages[self.pages.index(page) + 1:]:
-            next_block = page.get_next_block(None, ignored_block_types)
+        if page is not None:
+            next_block = page.get_next_block(block, ignored_block_types)
             if next_block:
                 return next_block
+            # If no block found, search subsequent pages
+            try:
+                page_idx = self.pages.index(page)
+            except ValueError:
+                return None
+            for page in self.pages[page_idx + 1:]:
+                next_block = page.get_next_block(None, ignored_block_types)
+                if next_block:
+                    return next_block
         return None
 
     def get_next_page(self, page: PageGroup):
-        page_idx = self.pages.index(page)
+        try:
+            page_idx = self.pages.index(page)
+        except ValueError:
+            return None
         if page_idx + 1 < len(self.pages):
             return self.pages[page_idx + 1]
         return None
 
     def get_prev_block(self, block: Block):
         page = self.get_page(block.page_id)
-        prev_block = page.get_prev_block(block)
-        if prev_block:
-            return prev_block
-        prev_page = self.get_prev_page(page)
-        if not prev_page:
-            return None
-        return prev_page.get_block(prev_page.structure[-1])
+        if page is not None:
+            prev_block = page.get_prev_block(block)
+            if prev_block:
+                return prev_block
+            prev_page = self.get_prev_page(page)
+            if not prev_page:
+                return None
+            if prev_page.structure is not None and len(prev_page.structure) > 0:
+                return prev_page.get_block(prev_page.structure[-1])
+        return None
     
     def get_prev_page(self, page: PageGroup):
-        page_idx = self.pages.index(page)
+        try:
+            page_idx = self.pages.index(page)
+        except ValueError:
+            return None
         if page_idx > 0:
             return self.pages[page_idx - 1]
         return None
@@ -93,7 +106,8 @@ class Document(BaseModel):
         section_hierarchy = None
         for page in self.pages:
             rendered = page.render(self, None, section_hierarchy)
-            section_hierarchy = rendered.section_hierarchy.copy()
+            if hasattr(rendered, "section_hierarchy") and rendered.section_hierarchy is not None:
+                section_hierarchy = rendered.section_hierarchy.copy()
             child_content.append(rendered)
 
         return DocumentOutput(
@@ -101,7 +115,7 @@ class Document(BaseModel):
             html=self.assemble_html(child_content)
         )
 
-    def contained_blocks(self, block_types: Sequence[BlockTypes] = None) -> List[Block]:
+    def contained_blocks(self, block_types: Sequence[BlockTypes] = ()):  # default to empty tuple
         blocks = []
         for page in self.pages:
             blocks += page.contained_blocks(self, block_types)

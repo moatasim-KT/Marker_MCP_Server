@@ -23,6 +23,17 @@ class GroqService(BaseService):
     groq_model_name: Annotated[str, "The Groq model name to use."] = "compound-beta"
     groq_base_url: Annotated[str, "The base url for Groq API."] = "https://api.groq.com/openai/v1"
     max_groq_tokens: Annotated[int, "The maximum number of tokens to use for a single Groq request."] = 8192
+    # Prioritized list of models to cycle through on rate limit
+    groq_model_list: List[str] = [
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "meta-llama/llama-4-maverick-17b-128e-instruct",
+        "qwen-qwq-32b",
+        "deepseek-r1-distill-qwen-32b",
+        "deepseek-r1-distill-llama-70b",
+        "llama-3.3-70b-versatile",
+        "compound-beta",
+        "compound-beta-mini",
+    ]
 
     def __init__(self, config=None):
         # Always prefer environment variables if set
@@ -34,6 +45,14 @@ class GroqService(BaseService):
             config_dict['groq_api_key'] = api_key
         if not config_dict.get('groq_base_url') and base_url:
             config_dict['groq_base_url'] = base_url
+        self._model_index = 0
+        if 'groq_model_name' in config_dict:
+            # Start at the specified model if present in the list
+            try:
+                self._model_index = self.groq_model_list.index(config_dict['groq_model_name'])
+            except ValueError:
+                self._model_index = 0
+        self.groq_model_name = self.groq_model_list[self._model_index]
         super().__init__(config_dict)
 
     def image_to_base64(self, image: Image.Image):
@@ -70,7 +89,6 @@ class GroqService(BaseService):
         if not isinstance(image, list):
             image = [image]
         image_data = self.prepare_images(image)
-        # Prepare payload content as JSON string
         json_content = json.dumps([
             *image_data,
             {"type": "text", "text": prompt},
@@ -82,7 +100,9 @@ class GroqService(BaseService):
             }
         ]
         tries = 0
-        while tries < max_retries:
+        model_attempts = 0
+        max_model_attempts = len(self.groq_model_list)
+        while tries < max_retries and model_attempts < max_model_attempts:
             try:
                 headers = {
                     "Authorization": f"Bearer {self.groq_api_key}",
@@ -92,7 +112,6 @@ class GroqService(BaseService):
                     "model": self.groq_model_name,
                     "messages": messages,
                     "max_tokens": self.max_groq_tokens,
-                    # "response_format": {"type": "json_object"},  # Removed for Groq compatibility
                 }
                 print(f"[GroqService] Using model: {self.groq_model_name}")
                 print(f"[GroqService] Payload model: {payload['model']}")
@@ -104,6 +123,14 @@ class GroqService(BaseService):
                         data=json.dumps(payload),
                         timeout=timeout,
                     )
+                    if response.status_code == 429:
+                        # Rate limit: try next model
+                        model_attempts += 1
+                        self._model_index = (self._model_index + 1) % len(self.groq_model_list)
+                        self.groq_model_name = self.groq_model_list[self._model_index]
+                        logger.warning(f"Groq rate limit hit. Switching to next model: {self.groq_model_name}")
+                        time.sleep(2 * model_attempts)
+                        continue
                     response.raise_for_status()
                 except requests.exceptions.HTTPError as e:
                     print(f"[GroqService] HTTPError: {e}")
