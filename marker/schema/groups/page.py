@@ -133,9 +133,7 @@ class PageGroup(Group):
         if block_id.block_id < 0 or block_id.block_id >= len(self.children):
             return None
         block: Block = self.children[block_id.block_id]
-        if block.block_id != block_id.block_id:
-            return None
-        return block
+        return None if block.block_id != block_id.block_id else block
 
     def assemble_html(self, document, child_blocks, parent_structure=None):
         template = ""
