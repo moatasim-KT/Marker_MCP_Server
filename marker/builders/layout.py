@@ -43,9 +43,10 @@ class LayoutBuilder(BaseBuilder):
             layout_results = self.forced_layout(document.pages)
         else:
             # Filter out None images for type safety
-            images = [page.get_image() for page in document.pages]
-            images = [img for img in images if img is not None]
-            layout_results = self.surya_layout(document.pages, images)
+            page_image_pairs = [(page, page.get_image()) for page in document.pages]
+            filtered_pairs = [(page, img) for page, img in page_image_pairs if img is not None]
+            pages, images = zip(*filtered_pairs) if filtered_pairs else ([], [])
+            layout_results = self.surya_layout(list(pages), list(images))
         self.add_blocks_to_pages(document.pages, layout_results)
 
     def get_batch_size(self):
