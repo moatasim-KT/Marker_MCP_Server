@@ -141,10 +141,11 @@ class PageGroup(Group):
             template += f"<content-ref src='{c.id}'></content-ref>"
         return template
 
+import numpy as np
+
     def compute_line_block_intersections(
         self, blocks: List[Block], provider_outputs: List[ProviderOutput]
     ):
-        import numpy as np
         max_intersections = {}
         block_bboxes = [block.polygon.bbox for block in blocks]
         line_bboxes = [
