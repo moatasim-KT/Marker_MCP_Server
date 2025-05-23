@@ -76,8 +76,7 @@ class Document(BaseModel):
     def get_prev_block(self, block: Block):
         page = self.get_page(block.page_id)
         if page is not None:
-            prev_block = page.get_prev_block(block)
-            if prev_block:
+            if prev_block := page.get_prev_block(block):
                 return prev_block
             prev_page = self.get_prev_page(page)
             if not prev_page:
