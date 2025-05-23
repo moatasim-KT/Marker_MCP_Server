@@ -38,8 +38,8 @@ class OCRConverter(PdfConverter):
         provider_cls = provider_from_filepath(filepath)
         # Ensure provider is a PdfProvider for DocumentBuilder
         from marker.providers.pdf import PdfProvider
-        if provider_cls is not PdfProvider:
-            raise TypeError(f"OCRConverter only supports PdfProvider, got {provider_cls.__name__}")
+        if not issubclass(provider_cls, PdfProvider):
+            raise TypeError(f"OCRConverter only supports PdfProvider or its subclasses, got {provider_cls.__name__}")
         layout_builder = self.resolve_dependencies(self.layout_builder_class)
         line_builder = self.resolve_dependencies(LineBuilder)
         ocr_builder = self.resolve_dependencies(OcrBuilder)
