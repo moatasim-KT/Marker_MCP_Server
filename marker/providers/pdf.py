@@ -360,7 +360,9 @@ class PdfProvider(BaseProvider):
         def get_obj_type(obj):
             return getattr(obj, 'type', None)
 
-        if not any([get_obj_type(obj) == pdfium_c.FPDF_PAGEOBJ_TEXT for obj in page_objs]):
+        if all(
+            get_obj_type(obj) != pdfium_c.FPDF_PAGEOBJ_TEXT for obj in page_objs
+        ):
             return False
 
         if self.strip_existing_ocr:
