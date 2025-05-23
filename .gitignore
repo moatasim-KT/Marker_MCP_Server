@@ -14,6 +14,8 @@ temp
 conversion_results
 uploads
 /cache
+.*
+output_markdown
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
