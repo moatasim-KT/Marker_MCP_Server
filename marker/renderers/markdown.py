@@ -132,7 +132,7 @@ class Markdownify(MarkdownConverter):
                 for r in range(int(cell.get("rowspan", 1)) - 1):
                     rowspan_cols[i + r] += colspan
             colspans.append(row_cols)
-        total_cols = max(colspans) if colspans else 0
+        total_cols = max(colspans, default=0)
 
         # Initialize grid as List[List[str]]
         grid: List[List[str]] = [["" for _ in range(total_cols)] for _ in range(total_rows)]
