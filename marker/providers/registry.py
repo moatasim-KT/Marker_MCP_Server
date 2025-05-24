@@ -1,5 +1,4 @@
 import filetype
-import filetype.match as file_match
 from bs4 import BeautifulSoup
 from filetype.types import archive, document, IMAGE
 
@@ -56,15 +55,15 @@ def provider_from_ext(filepath: str):
 def provider_from_filepath(filepath: str):
     if filetype.image_match(filepath) is not None:
         return ImageProvider
-    if file_match.match(filepath, load_matchers("pdf")) is not None:
+    if filetype.match(filepath, load_matchers("pdf")) is not None:
         return PdfProvider
-    if file_match.match(filepath, load_matchers("epub")) is not None:
+    if filetype.match(filepath, load_matchers("epub")) is not None:
         return EpubProvider
-    if file_match.match(filepath, load_matchers("doc")) is not None:
+    if filetype.match(filepath, load_matchers("doc")) is not None:
         return DocumentProvider
-    if file_match.match(filepath, load_matchers("xls")) is not None:
+    if filetype.match(filepath, load_matchers("xls")) is not None:
         return SpreadSheetProvider
-    if file_match.match(filepath, load_matchers("ppt")) is not None:
+    if filetype.match(filepath, load_matchers("ppt")) is not None:
         return PowerPointProvider
 
     try:

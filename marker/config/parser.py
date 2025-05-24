@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict
+from typing import Dict, Any
 
 import click
 
@@ -102,7 +102,7 @@ class ConfigParser:
         )(fn)
         return fn
 
-    def generate_config_dict(self) -> Dict[str, any]:
+    def generate_config_dict(self) -> Dict[str, Any]:
         config = {}
         output_dir = self.cli_options.get("output_dir", settings.OUTPUT_DIR)
         for k, v in self.cli_options.items():
@@ -150,7 +150,7 @@ class ConfigParser:
 
         service_cls = self.cli_options.get("llm_service", None)
         if service_cls is None:
-            service_cls = "marker.services.gemini.GoogleGeminiService"
+            service_cls = "marker.services.groq.GroqService"
         return service_cls
 
     def get_renderer(self):

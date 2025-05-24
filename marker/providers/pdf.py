@@ -2,7 +2,7 @@ import contextlib
 import ctypes
 import logging
 import re
-from typing import Annotated, Dict, List, Optional, Set
+from typing import Annotated, Dict, List, Optional, Set, Generator
 import typing
 
 import pypdfium2 as pdfium
@@ -110,7 +110,7 @@ class PdfProvider(BaseProvider):
                 self.page_lines = self.pdftext_extraction(doc)
 
     @contextlib.contextmanager
-    def get_doc(self):
+    def get_doc(self) -> Generator[PdfDocument, None, None]:
         doc = None
         try:
             doc = pdfium.PdfDocument(self.filepath)
@@ -263,9 +263,9 @@ class PdfProvider(BaseProvider):
                         span_chars = [
                             CharClass(
                                 polygon=PolygonBox.from_bbox([float(xx) for xx in (c["bbox"].bbox if hasattr(c["bbox"], 'bbox') else c["bbox"] )], ensure_nonzero_area=True),
-                                block_description=CharClass.block_description,
                                 text=c["char"],
                                 idx=int(c["char_idx"]),
+                                page_id=page_id,
                             )
                             for c in span["chars"]
                         ]
@@ -278,7 +278,6 @@ class PdfProvider(BaseProvider):
                         spans.append(
                             SpanClass(
                                 polygon=polygon,
-                                block_description=SpanClass.block_description,
                                 text=text,
                                 font=font_name,
                                 font_weight=font_weight,
@@ -289,6 +288,7 @@ class PdfProvider(BaseProvider):
                                 has_superscript=bool(superscript),
                                 has_subscript=bool(subscript),
                                 url=span.get("url"),
+                                page_id=page_id,
                             )
                         )
                         chars.append(span_chars)
@@ -302,7 +302,6 @@ class PdfProvider(BaseProvider):
                         ProviderOutput(
                             line=LineClass(
                                 polygon=polygon,
-                                block_description=LineClass.block_description,
                                 page_id=page_id,
                             ),
                             spans=spans,

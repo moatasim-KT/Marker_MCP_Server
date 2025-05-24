@@ -1,3 +1,74 @@
+[project]
+name = "marker-pdf"
+version = "1.7.3"
+description = "Convert documents to markdown with high speed and accuracy."
+authors = [
+    {name = "Vik Paruchuri", email = "github@vikas.sh"}
+]
+readme = "README.md"
+license = {text = "GPL-3.0-or-later"}
+keywords = ["pdf", "markdown", "ocr", "nlp"]
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=10.1.0",
+    "pydantic>=2.4.2",
+    "pydantic-settings>=2.0.3",
+    "transformers>=4.45.2",
+    "python-dotenv>=1.0.0",
+    "torch>=2.7.0",
+    "tqdm>=4.66.1",
+    "ftfy>=6.1.1",
+    "rapidfuzz>=3.8.1",
+    "surya-ocr>=0.14.2",
+    "regex>=2024.4.28",
+    "pdftext~=0.6.2",
+    "markdownify>=0.13.1",
+    "click>=8.2.0",
+    "markdown2>=2.5.2",
+    "filetype>=1.2.0",
+    "scikit-learn>=1.6.1",
+    "google-genai>=1.0.0",
+    "anthropic>=0.46.0",
+    "pre-commit>=4.2.0",
+    "openai>=1.65.2",
+    "requests>=2.32.3",
+    "mcp[cli]>=1.9.1",
+    "fastapi>=0.115.4",
+    "uvicorn>=0.32.0",
+    "python-multipart>=0.0.16",
+    "psutil>=5.9.0",
+    "pandas>=2.2.3",
+    "matplotlib>=3.10.3",
+]
+
+[project.optional-dependencies]
+full = ["mammoth>=1.9.0", "openpyxl>=3.1.5", "python-pptx>=1.0.2", "ebooklib>=0.18", "weasyprint>=63.1"]
+dev = [
+    "jupyter>=1.0.0",
+    "datasets>=2.21.0",
+    "streamlit>=1.37.1",
+    "pytest>=8.3.3",
+    "pytest-mock>=3.14.0",
+    "apted==1.0.3",
+    "distance==0.1.3",
+    "lxml==5.3.0",
+    "tabulate>=0.9.0",
+    "latex2mathml>=3.77.0",
+    "playwright>=1.49.1"
+]
+
+[project.scripts]
+marker = "marker.scripts.convert:convert_cli"
+marker_single = "marker.scripts.convert_single:convert_single_cli"
+marker_chunk_convert = "marker.scripts.chunk_convert:chunk_convert_cli"
+marker_gui = "marker.scripts.run_streamlit_app:streamlit_app_cli"
+marker_extract = "marker.scripts.run_streamlit_app:extraction_app_cli"
+marker_server = "src.server:server_cli"
+marker_mcp = "src.mcp_server:main"
+
+[project.urls]
+Repository = "https://github.com/VikParuchuri/marker"
+
 [tool.poetry]
 name = "marker-pdf"
 version = "1.7.3"
@@ -46,6 +117,7 @@ ebooklib = {version = "^0.18", optional = true}
 weasyprint = {version = "^63.1", optional = true}
 openai = "^1.65.2"
 requests = "^2.32.3"
+mcp = {extras = ["cli"], version = "^1.9.1"}
 
 [tool.poetry.group.dev.dependencies]
 jupyter = "^1.0.0"
@@ -72,7 +144,8 @@ marker_single = "marker.scripts.convert_single:convert_single_cli"
 marker_chunk_convert = "marker.scripts.chunk_convert:chunk_convert_cli"
 marker_gui = "marker.scripts.run_streamlit_app:streamlit_app_cli"
 marker_extract = "marker.scripts.run_streamlit_app:extraction_app_cli"
-marker_server = "marker.scripts.server:server_cli"
+marker_server = "src.server:server_cli"
+marker_mcp = "src.mcp_server:main"
 
 [build-system]
 requires = ["poetry-core"]

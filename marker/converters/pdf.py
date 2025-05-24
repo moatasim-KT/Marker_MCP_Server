@@ -5,12 +5,13 @@ from marker.services import BaseService
 os.environ["TOKENIZERS_PARALLELISM"] = "false"  # disables a tokenizers warning
 
 from collections import defaultdict
-from typing import Annotated, Any, Dict, List, Optional, Type, Tuple, Union
+from typing import Annotated, Any, Dict, List, Optional, Type, Tuple, Union, cast
 import io
 from contextlib import contextmanager
 import tempfile
 
 from marker.processors import BaseProcessor
+from marker.providers import BaseProvider
 from marker.processors.llm.llm_table_merge import LLMTableMergeProcessor
 from marker.providers.registry import provider_from_filepath
 from marker.builders.document import DocumentBuilder
@@ -47,6 +48,7 @@ from marker.util import strings_to_classes
 from marker.processors.llm.llm_handwriting import LLMHandwritingProcessor
 from marker.processors.order import OrderProcessor
 from marker.services.gemini import GoogleGeminiService
+from marker.services.groq import GroqService
 from marker.processors.line_merge import LineMergeProcessor
 from marker.processors.llm.llm_mathblock import LLMMathBlockProcessor
 
@@ -67,7 +69,7 @@ class PdfConverter(BaseConverter):
         bool,
         "Enable higher quality processing with LLMs.",
     ] = False
-    default_processors: Tuple[BaseProcessor, ...] = (
+    default_processors: Tuple[Type[BaseProcessor], ...] = (
         OrderProcessor,
         LineMergeProcessor,
         BlockquoteProcessor,
@@ -93,7 +95,7 @@ class PdfConverter(BaseConverter):
         ReferenceProcessor,
         DebugProcessor,
     )
-    default_llm_service: BaseService = GoogleGeminiService
+    default_llm_service: Type[BaseService] = GroqService
 
     def __init__(
         self,
@@ -111,31 +113,33 @@ class PdfConverter(BaseConverter):
         for block_type, override_block_type in self.override_map.items():
             register_block_class(block_type, override_block_type)
 
+        processor_classes: List[Type[BaseProcessor]]
         if processor_list is not None:
-            processor_list = strings_to_classes(processor_list)
+            processor_classes = strings_to_classes(processor_list)
         else:
-            processor_list = self.default_processors
+            processor_classes = list(self.default_processors)
 
+        renderer_cls: Type
         if renderer:
-            renderer = strings_to_classes([renderer])[0]
+            renderer_cls = strings_to_classes([renderer])[0]
         else:
-            renderer = MarkdownRenderer
+            renderer_cls = MarkdownRenderer
 
+        llm_service_instance = None
         if llm_service:
             llm_service_cls = strings_to_classes([llm_service])[0]
-            llm_service = self.resolve_dependencies(llm_service_cls)
+            llm_service_instance = self.resolve_dependencies(llm_service_cls)
         elif config.get("use_llm", False):
-            llm_service = self.resolve_dependencies(self.default_llm_service)
+            llm_service_instance = self.resolve_dependencies(self.default_llm_service)
 
         # Inject llm service into artifact_dict so it can be picked up by processors, etc.
-        artifact_dict["llm_service"] = llm_service
-        self.llm_service = llm_service
+        artifact_dict["llm_service"] = llm_service_instance
+        self.llm_service = llm_service_instance
 
         self.artifact_dict = artifact_dict
-        self.renderer = renderer
+        self.renderer = renderer_cls
 
-        processor_list = self.initialize_processors(processor_list)
-        self.processor_list = processor_list
+        self.processor_list = self.initialize_processors(processor_classes)
 
         self.layout_builder_class = LayoutBuilder
         if self.use_llm:
@@ -170,14 +174,17 @@ class PdfConverter(BaseConverter):
         line_builder = self.resolve_dependencies(LineBuilder)
         ocr_builder = self.resolve_dependencies(OcrBuilder)
         provider = provider_cls(filepath, self.config)
+        # Cast to expected type since DocumentBuilder expects PdfProvider specifically
+        # but this converter handles multiple provider types
         document = DocumentBuilder(self.config)(
-            provider, layout_builder, line_builder, ocr_builder
+            cast(Any, provider), layout_builder, line_builder, ocr_builder
         )
         structure_builder_cls = self.resolve_dependencies(StructureBuilder)
         structure_builder_cls(document)
 
-        for processor in self.processor_list:
-            processor(document)
+        if self.processor_list is not None:
+            for processor in self.processor_list:
+                processor(document)
 
         return document
 

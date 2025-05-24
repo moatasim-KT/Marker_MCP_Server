@@ -1,11 +1,12 @@
 import inspect
-from typing import Optional, List, Type
+from typing import Optional, List, Type, Dict, Any
 
 from pydantic import BaseModel
 
 from marker.processors import BaseProcessor
 from marker.processors.llm import BaseLLMSimpleBlockProcessor
 from marker.processors.llm.llm_meta import LLMSimpleBlockMetaProcessor
+from marker.services import BaseService
 from marker.util import assign_config, download_font
 
 
@@ -13,7 +14,8 @@ class BaseConverter:
     def __init__(self, config: Optional[BaseModel | dict] = None):
         assign_config(self, config)
         self.config = config
-        self.llm_service = None
+        self.llm_service: Optional[BaseService] = None
+        self.artifact_dict: Dict[str, Any] = {}
 
         # Download render font, needed for some providers
         download_font()
@@ -49,6 +51,10 @@ class BaseConverter:
         other_processors = [p for p in processors if not issubclass(type(p), BaseLLMSimpleBlockProcessor)]
 
         if not simple_llm_processors:
+            return processors
+
+        # Only create meta processor if we have an LLM service
+        if self.llm_service is None:
             return processors
 
         llm_positions = [i for i, p in enumerate(processors) if issubclass(type(p), BaseLLMSimpleBlockProcessor)]

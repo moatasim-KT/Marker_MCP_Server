@@ -63,3 +63,15 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Optimized settings for reduced LLM payload issues
+OPTIMIZED_LLM_SETTINGS = {
+    "max_concurrency": 1,
+    "max_retries": 1,
+    "timeout": 60,
+    "retry_wait_time": 15,
+    "max_rows_per_batch": 15,
+    "max_table_rows": 40,
+    "lowres_image_dpi": 72,
+    "highres_image_dpi": 150,
+}

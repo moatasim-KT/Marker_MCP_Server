@@ -1,11 +1,12 @@
 import html
 import re
-from typing import Literal, List
+from typing import Literal, List, cast
 
 import regex
 
 from marker.schema import BlockTypes
 from marker.schema.blocks import Block, BlockOutput
+from marker.schema.text.span import Span
 
 HYPHENS = r"-—¬"
 
@@ -46,11 +47,13 @@ class Line(Block):
     def ocr_input_text(self, document):
         text = ""
         for block in self.contained_blocks(document, (BlockTypes.Span,)):
+            # Cast to Span since we know these are Span blocks
+            span = cast(Span, block)
             # We don't include superscripts/subscripts and math since they can be unreliable at this stage
-            block_text = block.text
-            if block.italic:
+            block_text = span.text
+            if span.italic:
                 text += f"<i>{block_text}</i>"
-            elif block.bold:
+            elif span.bold:
                 text += f"<b>{block_text}</b>"
             else:
                 text += block_text
@@ -60,21 +63,23 @@ class Line(Block):
     def formatted_text(self, document, skip_urls=False):
         text = ""
         for block in self.contained_blocks(document, (BlockTypes.Span,)):
-            block_text = html.escape(block.text)
+            # Cast to Span since we know these are Span blocks
+            span = cast(Span, block)
+            block_text = html.escape(span.text)
 
-            if block.has_superscript:
+            if span.has_superscript:
                 block_text = re.sub(r"^([0-9\W]+)(.*)", r"<sup>\1</sup>\2", block_text)
                 if "<sup>" not in block_text:
                     block_text = f"<sup>{block_text}</sup>"
 
-            if block.url and not skip_urls:
-                block_text = f"<a href='{block.url}'>{block_text}</a>"
+            if span.url and not skip_urls:
+                block_text = f"<a href='{span.url}'>{block_text}</a>"
 
-            if block.italic:
+            if span.italic:
                 text += f"<i>{block_text}</i>"
-            elif block.bold:
+            elif span.bold:
                 text += f"<b>{block_text}</b>"
-            elif block.math:
+            elif span.math:
                 text += f"<math display='inline'>{block_text}</math>"
             else:
                 text += block_text
@@ -87,12 +92,47 @@ class Line(Block):
             template += c.html
 
         raw_text = remove_tags(template).strip()
-        structure_idx = parent_structure.index(self.id)
+        
+        # Add None check for parent_structure
+        if parent_structure is None:
+            return template.strip(" ")
+        
+        structure_idx = parent_structure.index(str(self.id))
         if structure_idx < len(parent_structure) - 1:
-            next_block_id = parent_structure[structure_idx + 1]
-            next_line = document.get_block(next_block_id)
-            next_line_raw_text = next_line.raw_text(document)
-            template = strip_trailing_hyphens(raw_text, next_line_raw_text, template)
+            next_block_id_str = parent_structure[structure_idx + 1]
+            # Convert string back to BlockId if needed
+            if isinstance(next_block_id_str, str):
+                from marker.schema.blocks import BlockId
+                import re
+                # Parse the string to extract page_id, block_type, block_id
+                # Example string: /page/1/Line/2
+                m = re.match(r"/page/(\d+)/(\w+)/(\d+)", next_block_id_str)
+                if m:
+                    page_id, block_type_str, block_id = m.groups()
+                    # Convert string to BlockTypes enum
+                    try:
+                        block_type = BlockTypes[block_type_str]
+                        next_block_id = BlockId(page_id=int(page_id), block_type=block_type, block_id=int(block_id))
+                    except KeyError:
+                        # If the block type is not valid, use fallback
+                        next_block_id = next_block_id_str
+                else:
+                    # fallback: just use page_id
+                    m = re.match(r"/page/(\d+)", next_block_id_str)
+                    if m:
+                        page_id = m.group(1)
+                        next_block_id = BlockId(page_id=int(page_id))
+                    else:
+                        next_block_id = next_block_id_str
+            else:
+                next_block_id = next_block_id_str
+            
+            # Only call get_block if we successfully converted to BlockId
+            if not isinstance(next_block_id, str):
+                next_line = document.get_block(next_block_id)
+                if next_line is not None:
+                    next_line_raw_text = next_line.raw_text(document)
+                    template = strip_trailing_hyphens(raw_text, next_line_raw_text, template)
         else:
             template = template.strip(
                 " "
@@ -104,9 +144,10 @@ class Line(Block):
         if self.structure is not None and len(self.structure) > 0:
             for block_id in self.structure:
                 block = document.get_block(block_id)
-                child_content.append(
-                    block.render(document, parent_structure, section_hierarchy)
-                )
+                if block is not None:
+                    child_content.append(
+                        block.render(document, parent_structure, section_hierarchy)
+                    )
 
         return BlockOutput(
             html=self.assemble_html(document, child_content, parent_structure),

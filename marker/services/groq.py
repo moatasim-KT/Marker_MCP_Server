@@ -28,7 +28,6 @@ class GroqService(BaseService):
         "meta-llama/llama-4-scout-17b-16e-instruct",
         "meta-llama/llama-4-maverick-17b-128e-instruct",
         "qwen-qwq-32b",
-        "deepseek-r1-distill-qwen-32b",
         "deepseek-r1-distill-llama-70b",
         "llama-3.3-70b-versatile",
         "compound-beta",
@@ -72,6 +71,23 @@ class GroqService(BaseService):
             }
             for img in images
         ]
+
+    def _send_groq_request(self, payload, headers, timeout):
+        try:
+            response = requests.post(
+                f"{self.groq_base_url}/chat/completions",
+                headers=headers,
+                data=json.dumps(payload),
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            print(f"[GroqService] HTTPError: {e}")
+            print(f"[GroqService] Response content: {getattr(e.response, 'text', '')}")
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Request to Groq API failed: {e}")
+        return None
 
     def __call__(
         self,
@@ -174,4 +190,97 @@ class GroqService(BaseService):
             except Exception as e:
                 logger.error(f"Groq inference failed: {e}")
                 break
+        # Chunking logic: if payload is too large, split and send concurrently
+        import concurrent.futures
+        max_payload_tokens = self.max_groq_tokens
+        est_tokens = len(json_content) // 4
+        if est_tokens > max_payload_tokens:
+            chunk_size = max_payload_tokens * 4  # chars
+            chunks = [json_content[i:i+chunk_size] for i in range(0, len(json_content), chunk_size)]
+            results = []
+            failed_chunks = []
+            headers = {
+                "Authorization": f"Bearer {self.groq_api_key}",
+                "Content-Type": "application/json",
+            }
+            timeout = timeout or self.timeout
+            def process_chunk(chunk, model_name):
+                payload = {
+                    "model": model_name,
+                    "messages": [{"role": "user", "content": chunk}],
+                    "max_tokens": self.max_groq_tokens,
+                }
+                result = self._send_groq_request(payload, headers, timeout)
+                if not result or not result.get("choices"):
+                    logger.warning(f"Chunk failed for model {model_name}. Retrying with next model.")
+                    # Try all models for this chunk
+                    for alt_model in self.groq_model_list:
+                        if alt_model == model_name:
+                            continue
+                        payload["model"] = alt_model
+                        result = self._send_groq_request(payload, headers, timeout)
+                        if result and result.get("choices"):
+                            logger.info(f"Chunk succeeded with fallback model {alt_model}.")
+                            break
+                    else:
+                        logger.error(f"All models failed for chunk. Skipping chunk.")
+                        return None
+                # Extract JSON from response
+                response_text = result["choices"][0]["message"]["content"]
+                json_str = None
+                match = re.search(r"```json\s*([\s\S]+?)```", response_text)
+                if match:
+                    json_str = match.group(1).strip()
+                else:
+                    match = re.search(r"\{[\s\S]+\}", response_text)
+                    if match:
+                        json_str = match.group(0)
+                if not json_str:
+                    logger.error(f"Groq response does not contain JSON. Raw: {response_text}")
+                    return None
+                try:
+                    return json.loads(json_str)
+                except Exception as e:
+                    logger.error(f"Groq extracted JSON is not valid: {e}\nRaw: {json_str}")
+                    return None
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.groq_model_list)) as executor:
+                futures = []
+                for i, chunk in enumerate(chunks):
+                    model_name = self.groq_model_list[i % len(self.groq_model_list)]
+                    futures.append(executor.submit(process_chunk, chunk, model_name))
+                for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                    else:
+                        failed_chunks.append(i)
+            # Aggregate valid JSON results only
+            if not results:
+                logger.error("All chunks failed. Returning empty result.")
+                return {}
+            # Simple aggregation: merge dicts if possible, else return list
+            if all(isinstance(r, dict) for r in results):
+                aggregated = {}
+                for r in results:
+                    aggregated.update(r)
+            else:
+                aggregated = results
+            # Post-process markdown/LaTeX/HTML output
+            def postprocess_output(output):
+                if isinstance(output, dict):
+                    for k, v in output.items():
+                        output[k] = postprocess_output(v)
+                    return output
+                if isinstance(output, list):
+                    return [postprocess_output(x) for x in output]
+                if isinstance(output, str):
+                    # Remove <br/> between block equations
+                    output = re.sub(r'(</math>\s*)<br\s*/?>\s*(<math display="block">)', r'\1\2', output)
+                    # Replace double brackets with single in LaTeX
+                    output = re.sub(r'\[\[([^\]]+)\]\]', r'[\1]', output)
+                    # Remove trailing commas in equations
+                    output = re.sub(r'(\\\])\s*,', r'\1', output)
+                    return output
+                return output
+            return postprocess_output(aggregated)
         return {}

@@ -67,7 +67,7 @@ class LineBuilder(BaseBuilder):
         int, "The maximum pixel distance between y1s for two lines to be merged"
     ] = 8
     excluded_for_coverage: Annotated[
-        Tuple[BlockTypes],
+        Tuple[BlockTypes, ...],
         "A list of block types to exclude from the layout coverage check.",
     ] = (
         BlockTypes.Figure,
@@ -147,18 +147,20 @@ class LineBuilder(BaseBuilder):
             document.pages, provider.page_lines
         )
 
-        boxes_to_ocr = {page.page_id: [] for page in document.pages}
-        page_lines = {page.page_id: [] for page in document.pages}
+        boxes_to_ocr: dict[int, list] = {page.page_id: [] for page in document.pages if isinstance(page.page_id, int)}
+        page_lines: dict[int, list] = {page.page_id: [] for page in document.pages if isinstance(page.page_id, int)}
 
-        LineClass: Line = get_block_class(BlockTypes.Line)
+        LineClass = get_block_class(BlockTypes.Line)
 
         layout_good = []
         for document_page, ocr_error_detection_label in zip(
             document.pages, ocr_error_detection_results.labels
         ):
-            provider_lines: List[ProviderOutput] = provider.page_lines.get(
-                document_page.page_id, []
-            )
+            page_id = document_page.page_id
+            if not isinstance(page_id, int):
+                layout_good.append(False)
+                continue
+            provider_lines: List[ProviderOutput] = provider.page_lines.get(page_id, [])
             provider_lines_good = all(
                 [
                     bool(provider_lines),
@@ -176,21 +178,23 @@ class LineBuilder(BaseBuilder):
         page_images = [
             page.get_image(highres=False, remove_blocks=self.ocr_remove_blocks)
             for page, good in zip(document.pages, run_detection)
-            if good
+            if good and hasattr(page, 'get_image') and callable(page.get_image)
         ]
+        # Filter to only PIL.Image.Image objects for detection
+        page_images = [img for img in page_images if isinstance(img, Image.Image)]
 
-        # Note: run_detection is longer than page_images, since it has a value for each page, not just good ones
-        # Detection results and inline detection results are for every page (we use run_detection to make the list full length)
         detection_results = self.get_detection_results(page_images, run_detection)
 
         assert len(detection_results) == len(layout_good) == len(document.pages)
         for document_page, detection_result, provider_lines_good in zip(
             document.pages, detection_results, layout_good
         ):
-            provider_lines: List[ProviderOutput] = provider.page_lines.get(
-                document_page.page_id, []
-            )
-            page_size = provider.get_page_bbox(document_page.page_id).size
+            page_id = document_page.page_id
+            if not isinstance(page_id, int):
+                continue
+            provider_lines: List[ProviderOutput] = provider.page_lines.get(page_id, [])
+            page_bbox = provider.get_page_bbox(page_id)
+            page_size = page_bbox.size if page_bbox is not None else (0, 0)
             image_size = (
                 PolygonBox.from_bbox(detection_result.image_bbox).size
                 if detection_result
@@ -219,26 +223,35 @@ class LineBuilder(BaseBuilder):
                     provider_line.line.text_extraction_method = (
                         "surya" if self.format_lines else "pdftext"
                     )
-                page_lines[document_page.page_id] = merged_provider_lines
+                page_lines[page_id] = merged_provider_lines
             else:
                 document_page.text_extraction_method = "surya"
-                boxes_to_ocr[document_page.page_id].extend(detection_boxes)
+                boxes_to_ocr[page_id].extend(detection_boxes)
 
-        # Dummy lines to merge into the document - Contains no spans, will be filled in later by OCRBuilder
-        ocr_lines = {document_page.page_id: [] for document_page in document.pages}
+        ocr_lines: dict[int, list] = {document_page.page_id: [] for document_page in document.pages if isinstance(document_page.page_id, int)}
         for page_id, page_ocr_boxes in boxes_to_ocr.items():
-            page_size = provider.get_page_bbox(page_id).size
-            image_size = document.get_page(page_id).get_image(highres=False).size
+            if not isinstance(page_id, int):
+                continue
+            page_bbox = provider.get_page_bbox(page_id)
+            page_size = page_bbox.size if page_bbox is not None else (0, 0)
+            doc_page = document.get_page(page_id)
+            image = doc_page.get_image(highres=False) if doc_page is not None and hasattr(doc_page, 'get_image') and callable(doc_page.get_image) else None
+            # Only use PIL.Image.Image for image_size
+            if isinstance(image, Image.Image):
+                image_size = image.size
+            else:
+                image_size = (0, 0)
             for box_to_ocr in page_ocr_boxes:
                 line_polygon = PolygonBox(polygon=box_to_ocr.polygon).rescale(
                     image_size, page_size
                 )
                 ocr_lines[page_id].append(
                     ProviderOutput(
-                        line=LineClass(
+                        line=Line(
                             polygon=line_polygon,
                             page_id=page_id,
                             text_extraction_method="surya",
+                            block_description=""
                         ),
                         spans=[],
                         chars=[],
@@ -252,7 +265,12 @@ class LineBuilder(BaseBuilder):
     ):
         page_texts = []
         for document_page in pages:
-            provider_lines = provider_page_lines.get(document_page.page_id, [])
+            page_id = document_page.page_id
+            provider_lines = []  # Default to empty list
+            if isinstance(page_id, int):
+                # Only try to get lines if page_id is an int
+                provider_lines = provider_page_lines.get(page_id, [])
+            
             page_text = "\n".join(
                 " ".join(s.text for s in line.spans) for line in provider_lines
             )
@@ -273,14 +291,15 @@ class LineBuilder(BaseBuilder):
         total_blocks = 0
         large_text_blocks = 0
 
+        structure = document_page.structure if document_page.structure is not None else []
         layout_blocks = [
-            document_page.get_block(block) for block in document_page.structure
+            document_page.get_block(block) for block in structure
         ]
         layout_blocks = [
-            b for b in layout_blocks if b.block_type not in self.excluded_for_coverage
+            b for b in layout_blocks if b is not None and b.block_type not in self.excluded_for_coverage
         ]
 
-        layout_bboxes = [block.polygon.bbox for block in layout_blocks]
+        layout_bboxes = [block.polygon.bbox for block in layout_blocks if block is not None]
         provider_bboxes = [line.line.polygon.bbox for line in provider_lines]
 
         if len(layout_bboxes) == 0:
@@ -289,7 +308,7 @@ class LineBuilder(BaseBuilder):
         if len(provider_bboxes) == 0:
             return False
 
-        intersection_matrix = matrix_intersection_area(layout_bboxes, provider_bboxes)
+        intersection_matrix = matrix_intersection_area(np.array(layout_bboxes), np.array(provider_bboxes))
 
         for idx, layout_block in enumerate(layout_blocks):
             total_blocks += 1
@@ -345,8 +364,12 @@ class LineBuilder(BaseBuilder):
 
     def filter_blank_lines(self, page: PageGroup, lines: List[ProviderOutput]):
         page_size = (page.polygon.width, page.polygon.height)
-        page_image = page.get_image()
-        image_size = page_image.size
+        page_image = page.get_image() if hasattr(page, 'get_image') and callable(page.get_image) else None
+        # Only use PIL.Image.Image for image_size
+        if isinstance(page_image, Image.Image):
+            image_size = page_image.size
+        else:
+            image_size = (0, 0)
 
         good_lines = []
         for line in lines:
@@ -354,23 +377,32 @@ class LineBuilder(BaseBuilder):
                 page_size, image_size
             )
             line_bbox = line_polygon_rescaled.fit_to_bounds((0, 0, *image_size)).bbox
-
-            if not self.is_blank_slice(page_image.crop(line_bbox)):
-                good_lines.append(line)
-
+            # Ensure bbox is a tuple of 4 floats
+            if (
+                isinstance(page_image, Image.Image) and hasattr(page_image, 'crop') and isinstance(line_bbox, (list, tuple)) and len(line_bbox) == 4
+            ):
+                try:
+                    bbox_tuple = tuple(float(x) for x in line_bbox)
+                    if len(bbox_tuple) == 4:
+                        cropped = page_image.crop(bbox_tuple)
+                        if not self.is_blank_slice(cropped):
+                            good_lines.append(line)
+                except Exception:
+                    continue
         return good_lines
 
     def merge_blocks(
         self,
         document: Document,
-        page_provider_lines: ProviderPageLines,
-        page_ocr_lines: ProviderPageLines,
+        page_provider_lines: dict[int, List[ProviderOutput]],
+        page_ocr_lines: dict[int, List[ProviderOutput]],
     ):
         for document_page in document.pages:
-            provider_lines: List[ProviderOutput] = page_provider_lines[
-                document_page.page_id
-            ]
-            ocr_lines: List[ProviderOutput] = page_ocr_lines[document_page.page_id]
+            page_id = document_page.page_id
+            if not isinstance(page_id, int):
+                continue
+            provider_lines: List[ProviderOutput] = page_provider_lines.get(page_id, [])
+            ocr_lines: List[ProviderOutput] = page_ocr_lines.get(page_id, [])
 
             # Only one or the other will have lines
             # Filter out blank lines which come from bad provider boxes, or invisible text
@@ -413,7 +445,7 @@ class LineBuilder(BaseBuilder):
             for line in text_lines
         ]
 
-        overlaps = matrix_intersection_area(provider_line_boxes, detected_line_boxes)
+        overlaps = matrix_intersection_area(np.array(provider_line_boxes), np.array(detected_line_boxes))
 
         # Find potential merges
         merge_lines = defaultdict(list)
@@ -480,16 +512,16 @@ class LineBuilder(BaseBuilder):
             if len(all_merge_sections) == 1:
                 return text_line.rescale(image_size, page_size)
             else:
-                poly = None
+                poly: PolygonBox | None = None
                 for section_idx in merge_section:
                     section_polygon = deepcopy(
                         horizontal_provider_lines[section_idx][1].line.polygon
                     )
                     if poly is None:
-                        poly: PolygonBox = section_polygon
+                        poly = section_polygon
                     else:
                         poly = poly.merge([section_polygon])
-                return poly
+                return poly if poly is not None else text_line.rescale(image_size, page_size)
 
         for line_idx in filtered_merge_lines:
             text_line = text_lines[line_idx]
@@ -502,12 +534,11 @@ class LineBuilder(BaseBuilder):
                     out_idx, merged_line = horizontal_provider_lines[
                         horizontal_provider_idx
                     ]
-                    # Set the polygon to the detected line - This is because provider polygons are sometimes incorrect
-                    # TODO Add metadata for this
-                    merged_line.line.polygon = bbox_for_merge_section(
-                        merge_section, filtered_merge_lines[line_idx], text_line
-                    )
-                    out_provider_lines.append((out_idx, merged_line))
+                    if merged_line is not None:
+                        merged_line.line.polygon = bbox_for_merge_section(
+                            merge_section, filtered_merge_lines[line_idx], text_line
+                        )
+                        out_provider_lines.append((out_idx, merged_line))
                     already_merged.add(merge_section[0])
                 else:
                     merge_section = sorted(merge_section)
@@ -519,15 +550,13 @@ class LineBuilder(BaseBuilder):
                         if merged_line is None:
                             merged_line = provider_line
                         else:
-                            # Combine the spans of the provider line with the merged line
                             merged_line = merged_line.merge(provider_line)
-                        already_merged.add(idx)  # Prevent double merging
-                    # Set the polygon to the detected line - This is because provider polygons are sometimes incorrect
-                    # TODO Add metadata for this
-                    merged_line.line.polygon = bbox_for_merge_section(
-                        merge_section, filtered_merge_lines[line_idx], text_line
-                    )
-                    out_provider_lines.append((out_idx, merged_line))
+                        already_merged.add(idx)
+                    if merged_line is not None:
+                        merged_line.line.polygon = bbox_for_merge_section(
+                            merge_section, filtered_merge_lines[line_idx], text_line
+                        )
+                        out_provider_lines.append((out_idx, merged_line))
 
         # Sort to preserve original order
         out_provider_lines = sorted(out_provider_lines, key=lambda x: x[0])

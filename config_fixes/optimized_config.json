@@ -1,0 +1,53 @@
+{
+  "description": "Enhanced configuration for AI Agents and MCP document processing",
+  "llm_settings": {
+    "max_concurrency": 2,
+    "timeout": 90,
+    "max_retries": 2,
+    "retry_wait_time": 15
+  },
+  "table_processing": {
+    "max_rows_per_batch": 25,
+    "max_table_rows": 75,
+    "detect_boxes": true,
+    "table_rec_batch_size": 2
+  },
+  "text_processing": {
+    "format_lines": true,
+    "force_ocr": false,
+    "strip_existing_ocr": false,
+    "disable_ocr_math": false,
+    "enhance_technical_content": true
+  },
+  "performance_settings": {
+    "lowres_image_dpi": 96,
+    "highres_image_dpi": 200,
+    "layout_batch_size": 2,
+    "equation_batch_size": 2,
+    "detection_batch_size": 2
+  },
+  "output_quality": {
+    "redo_inline_math": true,
+    "extract_images": true,
+    "paginate_output": true,
+    "preserve_formatting": true,
+    "extract_code_blocks": true
+  },
+  "gemini_specific": {
+    "gemini_model_name": "gemini-2.0-flash",
+    "max_retries": 2,
+    "timeout": 90
+  },
+  "groq_specific": {
+    "groq_model_name": "compound-beta",
+    "max_groq_tokens": 6144,
+    "max_retries": 2,
+    "timeout": 90
+  },
+  "document_analysis": {
+    "extract_diagrams": true,
+    "identify_code_samples": true,
+    "preserve_technical_formatting": true,
+    "extract_references": true
+  }
+}

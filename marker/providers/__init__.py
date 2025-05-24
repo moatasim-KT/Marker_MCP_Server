@@ -53,20 +53,20 @@ class BaseProvider:
         assign_config(self, config)
         self.filepath = filepath
 
-    def __len__(self):
-        pass
+    def __len__(self) -> int:
+        raise NotImplementedError("Subclasses must implement __len__")
 
     def get_images(self, idxs: List[int], dpi: int) -> List[Image.Image]:
-        pass
+        raise NotImplementedError("Subclasses must implement get_images")
 
     def get_page_bbox(self, idx: int) -> PolygonBox | None:
-        pass
+        raise NotImplementedError("Subclasses must implement get_page_bbox")
 
     def get_page_lines(self, idx: int) -> List[Line]:
-        pass
+        raise NotImplementedError("Subclasses must implement get_page_lines")
 
     def get_page_refs(self, idx: int) -> List[Reference]:
-        pass
+        raise NotImplementedError("Subclasses must implement get_page_refs")
 
     def __enter__(self):
         return self
