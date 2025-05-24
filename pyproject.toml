@@ -39,6 +39,7 @@ dependencies = [
     "psutil>=5.9.0",
     "pandas>=2.2.3",
     "matplotlib>=3.10.3",
+    "streamlit>=1.37.1",
 ]
 
 [project.optional-dependencies]
@@ -63,8 +64,8 @@ marker_single = "marker.scripts.convert_single:convert_single_cli"
 marker_chunk_convert = "marker.scripts.chunk_convert:chunk_convert_cli"
 marker_gui = "marker.scripts.run_streamlit_app:streamlit_app_cli"
 marker_extract = "marker.scripts.run_streamlit_app:extraction_app_cli"
-marker_server = "src.server:server_cli"
-marker_mcp = "src.mcp_server:main"
+marker_server = "marker.server:server_cli"
+marker_mcp = "marker.mcp_server:main"
 
 [project.urls]
 Repository = "https://github.com/VikParuchuri/marker"
@@ -144,8 +145,8 @@ marker_single = "marker.scripts.convert_single:convert_single_cli"
 marker_chunk_convert = "marker.scripts.chunk_convert:chunk_convert_cli"
 marker_gui = "marker.scripts.run_streamlit_app:streamlit_app_cli"
 marker_extract = "marker.scripts.run_streamlit_app:extraction_app_cli"
-marker_server = "src.server:server_cli"
-marker_mcp = "src.mcp_server:main"
+marker_server = "marker.server:server_cli"
+marker_mcp = "marker.mcp_server:main"
 
 [build-system]
 requires = ["poetry-core"]

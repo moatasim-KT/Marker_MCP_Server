@@ -74,9 +74,12 @@ def update_config_tool(config_json: str) -> str:
 app = FastAPI()
 app.mount("/mcp", mcp.streamable_http_app())
 
-# Compute absolute path to root-level static folder
+# Compute absolute path to root-level static folder and mount if it exists
 static_dir = Path(__file__).parent.parent / "static"
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")  # Use absolute path
+if static_dir.exists() and static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+else:
+    print(f"Note: Static directory {static_dir} not found. Web UI assets will not be available.")
 
 # Custom endpoints to directly serve monitoring and config data
 @app.get("/api/monitor/status")

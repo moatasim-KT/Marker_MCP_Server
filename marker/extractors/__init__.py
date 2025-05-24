@@ -41,7 +41,7 @@ class BaseExtractor:
         page: PageGroup,
         remove_blocks: Sequence[BlockTypes] | None = None,
         highres: bool = False,  # Default False to save tokens
-    ) -> Image.Image:
+    ) -> Image.Image | bytes | bytearray | memoryview | None:
         return page.get_image(
             document,
             highres=highres,

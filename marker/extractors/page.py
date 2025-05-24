@@ -59,9 +59,9 @@ def json_schema_to_base_model(schema: dict[str, Any]) -> Type[BaseModel]:
         elif json_type == "array" and "items" in field_props:
             item_props = field_props["items"]
             if item_props.get("type") == "object":
-                item_type: type[BaseModel] = json_schema_to_base_model(item_props)
+                item_type = json_schema_to_base_model(item_props)
             else:
-                item_type: type = type_mapping.get(item_props.get("type"), Any)
+                item_type = type_mapping.get(item_props.get("type"), Any)
             field_type = list[item_type]
         else:
             field_type = type_mapping.get(json_type, Any)

@@ -1,5 +1,5 @@
 import copy
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Optional, Any, cast
 
 from ftfy import fix_text
 from PIL import Image
@@ -39,7 +39,7 @@ class OcrBuilder(BaseBuilder):
         List[BlockTypes],
         "Blocktypes for which contained lines are not processed by the OCR model"
         "By default, this avoids recognizing lines inside equations",
-    ] = BlockTypes.Equation
+    ] = [BlockTypes.Equation]
     ocr_task_name: Annotated[
         str,
         "The OCR mode to use, see surya for details.  Set to 'ocr_without_boxes' for potentially better performance, at the expense of formatting.",
@@ -87,15 +87,31 @@ class OcrBuilder(BaseBuilder):
             page_line_ids = []
             page_line_original_texts = []
 
-            page_size = provider.get_page_bbox(document_page.page_id).size
+            # Ensure page_id is not None before using it
+            page_id = document_page.page_id
+            if page_id is None:
+                continue
+                
+            page_bbox = provider.get_page_bbox(page_id)
+            if page_bbox is None:
+                continue
+                
+            page_size = page_bbox.size
+            if page_highres_image is None:
+                continue
+            # Ensure the image is a PIL Image object with size attribute
+            if not isinstance(page_highres_image, Image.Image):
+                continue
             image_size = page_highres_image.size
             # Search by block, and the lines, so that we can filter based on containing block type
             for block in document_page.contained_blocks(document):
                 if block.block_type in self.skip_ocr_blocks:
                     continue
-                block_lines: List[Line] = block.contained_blocks(
+                block_lines_raw = block.contained_blocks(
                     document, [BlockTypes.Line]
                 )
+                # Cast to List[Line] since we know we're getting Line blocks
+                block_lines: List[Line] = cast(List[Line], block_lines_raw)
                 block_lines_to_ocr = [
                     block_line
                     for block_line in block_lines
@@ -135,7 +151,7 @@ class OcrBuilder(BaseBuilder):
         document: Document,
         pages: List[PageGroup],
         provider: PdfProvider,
-        images: List[any],
+        images: List[Any],
         line_polygons: List[List[List[List[int]]]],  # polygons
         line_ids: List[List[BlockId]],
         line_original_texts: List[List[str]],
@@ -144,11 +160,15 @@ class OcrBuilder(BaseBuilder):
             return
 
         self.recognition_model.disable_tqdm = self.disable_tqdm
+        
+        # Flatten the input_text list to match expected format
+        flattened_input_text: List[str] = [text for page_texts in line_original_texts for text in page_texts]
+        
         recognition_results: List[OCRResult] = self.recognition_model(
             images=images,
             task_names=[self.ocr_task_name] * len(images),
             polygons=line_polygons,
-            input_text=line_original_texts,
+            input_text=cast(List[Optional[str]], flattened_input_text) if flattened_input_text else None,
             recognition_batch_size=int(self.get_recognition_batch_size()),
             sort_lines=False,
             math_mode=not self.disable_ocr_math,
@@ -171,8 +191,10 @@ class OcrBuilder(BaseBuilder):
                     ocr_line.chars, document_page, image
                 )
 
-                line = document_page.get_block(line_id)
-                self.replace_line_spans(document, document_page, line, new_spans)
+                line_block = document_page.get_block(line_id)
+                if line_block is not None and isinstance(line_block, Line):
+                    line = cast(Line, line_block)
+                    self.replace_line_spans(document, document_page, line, new_spans)
 
     # TODO Fix polygons when we cut the span into multiple spans
     def link_and_break_span(self, span: Span, text: str, match_text, url: str):
@@ -197,8 +219,9 @@ class OcrBuilder(BaseBuilder):
     def replace_line_spans(
         self, document: Document, page: PageGroup, line: Line, new_spans: List[Span]
     ):
-        old_spans = line.contained_blocks(document, [BlockTypes.Span])
-        text_ref_matching = {span.text: span.url for span in old_spans if span.url}
+        old_spans_blocks = line.contained_blocks(document, [BlockTypes.Span])
+        old_spans = cast(List[Span], old_spans_blocks)
+        text_ref_matching = {span.text: span.url for span in old_spans if hasattr(span, 'url') and span.url}
 
         # Insert refs into new spans, since the OCR model does not (cannot) generate these
         final_new_spans = []
@@ -251,8 +274,6 @@ class OcrBuilder(BaseBuilder):
         self, chars: List[TextChar], page: PageGroup, image: Image.Image
     ):
         # Turn input characters from surya into spans - also store the raw characters
-        SpanClass: Span = get_block_class(BlockTypes.Span)
-        CharClass: Char = get_block_class(BlockTypes.Char)
         spans = []
         formats = {"plain"}
 
@@ -264,45 +285,47 @@ class OcrBuilder(BaseBuilder):
             char_box = PolygonBox(polygon=char.polygon).rescale(
                 image_size, page.polygon.size
             )
-            marker_char = CharClass(
+            
+            # Create a character object with required parameters
+            marker_char = Char(
                 text=char.text,
                 idx=idx,
                 page_id=page.page_id,
-                polygon=char_box,
+                polygon=char_box
             )
 
-            is_opening_tag, format = get_opening_tag_type(char.text)
-            if is_opening_tag and format not in formats:
-                formats.add(format)
+            is_opening_tag, format_type = get_opening_tag_type(char.text)
+            if is_opening_tag and format_type is not None and format_type not in formats:
+                formats.add(format_type)
                 if current_span:
                     current_chars = self.assign_chars(current_span, current_chars)
                     spans.append(current_span)
                     current_span = None
 
-                if format == "math":
-                    current_span = SpanClass(
-                        text="",
-                        formats=list(formats),
-                        page_id=page.page_id,
+                if format_type == "math":
+                    current_span = Span(
+                        page_id=page.page_id, 
                         polygon=char_box,
-                        minimum_position=0,
-                        maximum_position=0,
+                        text="",
                         font="Unknown",
                         font_weight=0,
                         font_size=0,
+                        minimum_position=0,
+                        maximum_position=0,
+                        formats=["math"]
                     )
                     self.store_char(marker_char, current_chars, page)
                 continue
 
-            is_closing_tag, format = get_closing_tag_type(char.text)
-            if is_closing_tag:
+            is_closing_tag, format_type = get_closing_tag_type(char.text)
+            if is_closing_tag and format_type is not None:
                 # Useful since the OCR model sometimes returns closing tags without an opening tag
                 try:
-                    formats.remove(format)
-                except Exception:
+                    formats.remove(format_type)
+                except KeyError:
                     continue
                 if current_span:
-                    if format == "math":
+                    if format_type == "math":
                         current_span.html = (
                             f'<math display="inline">{current_span.text}</math>'
                         )
@@ -313,16 +336,16 @@ class OcrBuilder(BaseBuilder):
                 continue
 
             if not current_span:
-                current_span = SpanClass(
-                    text=fix_text(char.text),
-                    formats=list(formats),
-                    page_id=page.page_id,
+                current_span = Span(
+                    page_id=page.page_id, 
                     polygon=char_box,
-                    minimum_position=0,
-                    maximum_position=0,
+                    text=fix_text(char.text),
                     font="Unknown",
                     font_weight=0,
                     font_size=0,
+                    minimum_position=0,
+                    maximum_position=0,
+                    formats=["plain"]
                 )
                 self.store_char(marker_char, current_chars, page)
                 continue
@@ -340,7 +363,7 @@ class OcrBuilder(BaseBuilder):
             spans.append(current_span)
 
         # Add newline after all spans finish
-        if len(spans) > 0 and not spans[-1].html:
+        if len(spans) > 0 and not getattr(spans[-1], 'html', None):
             spans[-1].text += "\n"
 
         return spans

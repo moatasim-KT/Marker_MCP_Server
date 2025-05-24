@@ -1,5 +1,5 @@
 from functools import cache
-from typing import Tuple, List
+from typing import Tuple, List, Type, cast, Any
 
 from marker.builders.document import DocumentBuilder
 from marker.builders.line import LineBuilder
@@ -16,14 +16,14 @@ from marker.schema import BlockTypes
 
 
 class TableConverter(PdfConverter):
-    default_processors: Tuple[BaseProcessor, ...] = (
+    default_processors: Tuple[Type[BaseProcessor], ...] = (
         TableProcessor,
         LLMTableProcessor,
         LLMTableMergeProcessor,
         LLMFormProcessor,
         LLMComplexRegionProcessor,
     )
-    converter_block_types: List[BlockTypes] = (BlockTypes.Table, BlockTypes.Form, BlockTypes.TableOfContents)
+    converter_block_types: List[BlockTypes] = [BlockTypes.Table, BlockTypes.Form, BlockTypes.TableOfContents]
 
     def build_document(self, filepath: str):
         provider_cls = provider_from_filepath(filepath)
@@ -34,10 +34,11 @@ class TableConverter(PdfConverter):
         document_builder.disable_ocr = True
 
         provider = provider_cls(filepath, self.config)
-        document = document_builder(provider, layout_builder, line_builder, ocr_builder)
+        document = document_builder(cast(Any, provider), layout_builder, line_builder, ocr_builder)
 
         for page in document.pages:
-            page.structure = [p for p in page.structure if p.block_type in self.converter_block_types]
+            if page.structure is not None:
+                page.structure = [p for p in page.structure if p.block_type in self.converter_block_types]
 
         for processor in self.processor_list:
             processor(document)

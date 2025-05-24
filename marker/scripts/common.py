@@ -3,14 +3,43 @@ import base64
 import io
 import re
 import sys
-from typing import Optional
+from typing import Optional, Union, Any
 
 from PIL import Image
 import click
 import pypdfium2
-import streamlit as st
 from pydantic import BaseModel
-from streamlit.runtime.uploaded_file_manager import UploadedFile
+
+# Import streamlit with fallback handling
+try:
+    import streamlit as st
+    from streamlit.runtime.uploaded_file_manager import UploadedFile
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    # Create dummy classes for when streamlit is not available
+    class MockStreamlit:
+        @staticmethod
+        def cache_data():
+            def decorator(func):
+                return func
+            return decorator
+        
+        @staticmethod
+        def cache_resource():
+            def decorator(func):
+                return func
+            return decorator
+    
+    class MockUploadedFile:
+        def __init__(self):
+            self.type = ""
+        
+        def getvalue(self):
+            return b""
+    
+    st = MockStreamlit()
+    UploadedFile = MockUploadedFile
+    STREAMLIT_AVAILABLE = False
 
 from marker.config.parser import ConfigParser
 from marker.config.printer import CustomClickPrinter
@@ -68,7 +97,7 @@ def get_page_image(pdf_file, page_num, dpi=96):
         page = doc[page_num]
         png_image = (
             page.render(
-                scale=dpi / 72,
+                scale=int(dpi / 72),
             )
             .to_pil()
             .convert("RGB")
@@ -79,7 +108,7 @@ def get_page_image(pdf_file, page_num, dpi=96):
 
 
 @st.cache_data()
-def page_count(pdf_file: UploadedFile):
+def page_count(pdf_file: Any):
     if "pdf" in pdf_file.type:
         doc = open_pdf(pdf_file)
         return len(doc) - 1
@@ -87,7 +116,7 @@ def page_count(pdf_file: UploadedFile):
         return 1
 
 
-def pillow_image_to_base64_string(img: Image) -> str:
+def pillow_image_to_base64_string(img: Image.Image) -> str:
     buffered = io.BytesIO()
     img.save(buffered, format="JPEG")
     return base64.b64encode(buffered.getvalue()).decode("utf-8")

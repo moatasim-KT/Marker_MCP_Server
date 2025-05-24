@@ -1,7 +1,7 @@
 import re
 from collections import defaultdict
 from copy import deepcopy
-from typing import Annotated, List
+from typing import Annotated, List, Tuple, Optional
 from collections import Counter
 
 from ftfy import fix_text
@@ -28,30 +28,30 @@ class TableProcessor(BaseProcessor):
     A processor for recognizing tables in the document.
     """
 
-    block_types = (BlockTypes.Table, BlockTypes.TableOfContents, BlockTypes.Form)
+    block_types: Tuple[BlockTypes, ...] = (BlockTypes.Table, BlockTypes.TableOfContents, BlockTypes.Form)
     detect_boxes: Annotated[
         bool,
         "Whether to detect boxes for the table recognition model.",
     ] = False
     detection_batch_size: Annotated[
-        int,
+        Optional[int],
         "The batch size to use for the table detection model.",
         "Default is None, which will use the default batch size for the model.",
     ] = None
     table_rec_batch_size: Annotated[
-        int,
+        Optional[int],
         "The batch size to use for the table recognition model.",
         "Default is None, which will use the default batch size for the model.",
     ] = None
     recognition_batch_size: Annotated[
-        int,
+        Optional[int],
         "The batch size to use for the table recognition model.",
         "Default is None, which will use the default batch size for the model.",
     ] = None
     contained_block_types: Annotated[
         List[BlockTypes],
         "Block types to remove if they're contained inside the tables.",
-    ] = (BlockTypes.Text, BlockTypes.TextInlineMath)
+    ] = [BlockTypes.Text, BlockTypes.TextInlineMath]
     row_split_threshold: Annotated[
         float,
         "The percentage of rows that need to be split across the table before row splitting is active.",
@@ -89,9 +89,17 @@ class TableProcessor(BaseProcessor):
         for page in document.pages:
             for block in page.contained_blocks(document, self.block_types):
                 image = block.get_image(document, highres=True)
+                page_image = page.get_image(highres=True)
+                if page_image is None:
+                    continue
+                    
+                image_size = getattr(page_image, 'size', None)
+                if image_size is None:
+                    continue
+                    
                 image_poly = block.polygon.rescale(
                     (page.polygon.width, page.polygon.height),
-                    page.get_image(highres=True).size,
+                    image_size,
                 )
 
                 table_data.append(
@@ -100,7 +108,7 @@ class TableProcessor(BaseProcessor):
                         "page_id": page.page_id,
                         "table_image": image,
                         "table_bbox": image_poly.bbox,
-                        "img_size": page.get_image(highres=True).size,
+                        "img_size": image_size,
                         "ocr_block": page.text_extraction_method == "surya"
                         or self.format_lines,
                     }
@@ -149,10 +157,10 @@ class TableProcessor(BaseProcessor):
                     cell_block = TableCell(
                         polygon=cell_polygon,
                         text_lines=self.finalize_cell_text(cell),
-                        rowspan=cell.rowspan,
+                        rowspan=cell.rowspan or 1,
                         colspan=cell.colspan,
                         row_id=cell.row_id,
-                        col_id=cell.col_id,
+                        col_id=cell.col_id or 0,
                         is_header=bool(cell.is_header),
                         page_id=page.page_id,
                     )
@@ -174,7 +182,7 @@ class TableProcessor(BaseProcessor):
                 for child, intersection in zip(child_contained_blocks, intersections):
                     # Adjust this to percentage of the child block that is enclosed by the table
                     intersection_pct = intersection / max(child.polygon.area, 1)
-                    if intersection_pct > 0.95 and child.id in page.structure:
+                    if intersection_pct > 0.95 and page.structure is not None and child.id in page.structure:
                         page.structure.remove(child.id)
 
     def finalize_cell_text(self, cell: SuryaTableCell):
@@ -208,7 +216,9 @@ class TableProcessor(BaseProcessor):
             if len(table.cells) == 0:
                 # Skip empty tables
                 continue
-            unique_cols = sorted(list(set([c.col_id for c in table.cells])))
+            unique_cols = sorted(list(set([c.col_id for c in table.cells if c.col_id is not None])))
+            if not unique_cols:
+                continue
             max_col = max(unique_cols)
             dollar_cols = []
             for col in unique_cols:
@@ -222,7 +232,7 @@ class TableProcessor(BaseProcessor):
                 span_into_col = [
                     c
                     for c in table.cells
-                    if c.col_id != col and c.col_id + c.colspan > col > c.col_id
+                    if c.col_id is not None and c.col_id != col and (c.col_id + c.colspan) > col > c.col_id
                 ]
 
                 # This is a column that is entirely dollar signs
