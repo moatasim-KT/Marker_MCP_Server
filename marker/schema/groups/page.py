@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
+import numpy as np
 from PIL import Image, ImageDraw
 
 from pdftext.schema import Reference
@@ -83,59 +84,10 @@ class PageGroup(Group):
         block: Optional[Block] = None,
         ignored_block_types: Optional[List[BlockTypes]] = None,
     ):
+        if self.structure is None:
+            return None
         if ignored_block_types is None:
             ignored_block_types = []
-# 1) Enforce non‐null lists in the constructor so you can drop all the `if … is None` guards.
-#    E.g. using a dataclass or in __init__:
-from dataclasses import dataclass, field
-
-@dataclass
-class Page:
-    page_id: int
-    block_id: int = 0
-    children: list[Block]    = field(default_factory=list)
-    structure: list[BlockId] = field(default_factory=list)
-    excluded_block_types: set[BlockTypes] = field(default_factory=set)
-    maximum_assignment_distance: float = 20.0
-    # … other fields …
-
-# 2) Now simplify your helpers. For example, get_next_block:
-def get_next_block(
-    self,
-    block: Optional[Block] = None,
-    ignored_block_types: Optional[list[BlockTypes]] = None,
-) -> Block | None:
-    ignored = ignored_block_types or []
-    idx = (
-        self.structure.index(block.id) + 1
-        if block and block.id in self.structure
-        else 0
-    )
-    for bid in self.structure[idx:]:
-        if bid.block_type not in ignored:
-            return self.get_block(bid)
-    return None
-
-# 3) And get_prev_block:
-def get_prev_block(self, block: Block) -> Block | None:
-    try:
-        i = self.structure.index(block.id)
-    except ValueError:
-        return None
-    return self.get_block(self.structure[i-1]) if i > 0 else None
-
-# 4) get_block can stay a simple bounds check:
-def get_block(self, block_id: BlockId) -> Block | None:
-    i = block_id.block_id
-    if 0 <= i < len(self.children):
-        blk = self.children[i]
-        return blk if blk.block_id == i else None
-    return None
-
-# By guaranteeing `children` and `structure` are always lists,
-# you can remove every `if self.children is None`, `if self.structure is None`,
-# `hasattr(...)` and try/except for missing attributes in every helper.
-            return None
         structure_idx = 0
         if block is not None and hasattr(block, "id"):
             try:
@@ -147,7 +99,7 @@ def get_block(self, block_id: BlockId) -> Block | None:
                 return self.get_block(next_block_id)
         return None  # No valid next block found
 
-    def get_prev_block(self, block: Block):
+    def get_prev_block(self, block: Block) -> Block | None:
         if self.structure is None or block is None or not hasattr(block, "id"):
             return None
         try:
@@ -190,8 +142,6 @@ def get_block(self, block_id: BlockId) -> Block | None:
             template += f"<content-ref src='{c.id}'></content-ref>"
         return template
 
-import numpy as np
-
     def compute_line_block_intersections(
         self, blocks: List[Block], provider_outputs: List[ProviderOutput]
     ):
@@ -217,7 +167,7 @@ import numpy as np
 
     def replace_block(self, block: Block, new_block: Block):
         self.add_full_block(new_block)
-        super().replace_block(block, new_block)
+        super(PageGroup, self).replace_block(block, new_block)
         if self.children is not None:
             for child in self.children:
                 if hasattr(child, "replace_block"):

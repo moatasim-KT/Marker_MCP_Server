@@ -144,7 +144,7 @@ Adversarial training <i>(AT)</i> <a href='#page-9-1'>[23]</a>, which aims to min
         def is_mostly_math(block):
             text = block.raw_text(document)
             # Heuristic: if more than 70% of the text is math/latex, skip LLM
-            math_chars = sum(bool(c in "$\\{}^_[]|" or c.isdigit())
+            math_chars = sum(1 for c in text if c in "$\\{}^_[]|" or c.isdigit())
             return len(text) > 0 and math_chars / len(text) > 0.7
 
         inference_blocks = [b for b in (inline_blocks + detected_blocks + additional_text_blocks) if not is_mostly_math(b[1])]

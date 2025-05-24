@@ -33,7 +33,7 @@ class LLMSimpleBlockMetaProcessor(BaseLLMProcessor):
         if not text or not isinstance(text, str):
             return False
         math_chars = set("$\\^_{}[]()=+-*/|<>%0123456789")
-        math_count = sum(bool(c in math_chars)
+        math_count = sum(1 for c in text if c in math_chars)
         return (math_count / max(1, len(text))) > threshold
 
     def __call__(self, document: Document):

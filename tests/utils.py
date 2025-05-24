@@ -13,9 +13,9 @@ def setup_pdf_provider(
     pdf_bytes_content = None
     # Iterate through the dataset to find the item with the matching filename
     for item in dataset:
-        item_filename = item.get("filename")
+        item_filename = getattr(item, "filename", None)
         if item_filename == filename:
-            pdf_bytes_content = item.get("pdf")  # 'pdf' field in this dataset contains bytes
+            pdf_bytes_content = getattr(item, "pdf", None)  # 'pdf' field in this dataset contains bytes
             break
 
     if pdf_bytes_content is None:
