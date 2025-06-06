@@ -7,7 +7,7 @@
       ],
       "cwd": "/Users/moatasimfarooque/Downloads/marker-1.7.3",
       "env": {
-        "GROQ_API_KEY": "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",
+        "GROQ_API_KEY": "api_key",
         "LOG_LEVEL": "INFO"
       }
     }
