@@ -1,0 +1,9 @@
+{
+  "use_llm": true,
+  "llm_service": "marker.services.groq.GroqService",
+  "output_format": "markdown",
+  "debug": false,
+  "extract_images": true,
+  "format_lines": true,
+  "pdftext_workers": 2
+}

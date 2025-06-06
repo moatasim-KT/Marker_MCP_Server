@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 
 from PIL import Image
 from pydantic import BaseModel
@@ -54,28 +54,32 @@ class BaseProvider:
         self.filepath = filepath
 
     def __len__(self):
-        pass
+        raise NotImplementedError("Subclasses must implement __len__")
 
     def get_images(self, idxs: List[int], dpi: int) -> List[Image.Image]:
-        pass
+        raise NotImplementedError("Subclasses must implement get_images")
 
     def get_page_bbox(self, idx: int) -> PolygonBox | None:
-        pass
+        raise NotImplementedError("Subclasses must implement get_page_bbox")
 
     def get_page_lines(self, idx: int) -> List[Line]:
-        pass
+        raise NotImplementedError("Subclasses must implement get_page_lines")
 
     def get_page_refs(self, idx: int) -> List[Reference]:
-        pass
+        raise NotImplementedError("Subclasses must implement get_page_refs")
 
     def __enter__(self):
         return self
 
     @staticmethod
-    def get_font_css():
-        from weasyprint import CSS
-        from weasyprint.text.fonts import FontConfiguration
-
+    def get_font_css() -> Any:
+        try:
+            from weasyprint import CSS  # type: ignore
+            from weasyprint.text.fonts import FontConfiguration  # type: ignore
+        except ImportError:
+            # weasyprint is an optional dependency
+            return None
+            
         font_config = FontConfiguration()
         css = CSS(
             string=f"""

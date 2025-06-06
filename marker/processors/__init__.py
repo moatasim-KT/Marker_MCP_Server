@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from marker.schema import BlockTypes
 from marker.schema.document import Document
 from marker.util import assign_config
+from .registry import register_processor, get_processor
 
 
 class BaseProcessor:
@@ -15,3 +16,8 @@ class BaseProcessor:
 
     def __call__(self, document: Document, *args, **kwargs):
         raise NotImplementedError
+
+# Example usage:
+# @register_processor('my_custom_processor')
+# class MyCustomProcessor:
+#     ...

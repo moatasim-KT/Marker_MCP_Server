@@ -1,0 +1,9 @@
+{
+  "use_llm": false,
+  "output_format": "markdown",
+  "debug": false,
+  "extract_images": true,
+  "disable_multiprocessing": false,
+  "disable_image_extraction": false,
+  "pdftext_workers": 2
+}

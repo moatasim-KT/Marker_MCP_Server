@@ -1,28 +1,26 @@
+import base64
+import io
+import os
+import tempfile
 import traceback
+from contextlib import asynccontextmanager
+from typing import Annotated, Optional
 
 import click
-import os
-
+from fastapi import FastAPI, File, Form, UploadFile
 from pydantic import BaseModel, Field
 from starlette.responses import HTMLResponse
 
 from marker.config.parser import ConfigParser
-from marker.output import text_from_rendered
-
-import base64
-from contextlib import asynccontextmanager
-from typing import Optional, Annotated
-import io
-
-from fastapi import FastAPI, Form, File, UploadFile
 from marker.converters.pdf import PdfConverter
 from marker.models import create_model_dict
+from marker.output import text_from_rendered
 from marker.settings import settings
 
 app_data = {}
 
 
-UPLOAD_DIRECTORY = "./uploads"
+UPLOAD_DIRECTORY = os.path.join(tempfile.gettempdir(), "marker_uploads")
 os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
 
 
@@ -54,14 +52,13 @@ async def root():
 
 class CommonParams(BaseModel):
     filepath: Annotated[
-        Optional[str], Field(description="The path to the PDF file to convert.")
+        str | None, Field(description="The path to the PDF file to convert.")
     ]
     page_range: Annotated[
-        Optional[str],
+        str | None,
         Field(
-            description="Page range to convert, specify comma separated page numbers or ranges.  Example: 0,5-10,20",
-            example=None,
-        ),
+            description="Page range to convert, specify comma separated page numbers or ranges.  Example: 0,5-10,20"
+        )
     ] = None
     force_ocr: Annotated[
         bool,
@@ -86,11 +83,14 @@ class CommonParams(BaseModel):
 async def _convert_pdf(params: CommonParams):
     assert params.output_format in ["markdown", "json", "html"], "Invalid output format"
     try:
-        options = params.model_dump()
+        options = params.model_dump(exclude_none=True)
         config_parser = ConfigParser(options)
         config_dict = config_parser.generate_config_dict()
         config_dict["pdftext_workers"] = 1
         converter_cls = PdfConverter
+        filepath_arg = params.filepath
+        if filepath_arg is None:
+            raise ValueError("Filepath must be provided for conversion.")
         converter = converter_cls(
             config=config_dict,
             artifact_dict=app_data["models"],
@@ -98,7 +98,7 @@ async def _convert_pdf(params: CommonParams):
             renderer=config_parser.get_renderer(),
             llm_service=config_parser.get_llm_service(),
         )
-        rendered = converter(params.filepath)
+        rendered = converter(filepath_arg)
         text, _, images = text_from_rendered(rendered)
         metadata = rendered.metadata
     except Exception as e:
@@ -132,14 +132,16 @@ async def convert_pdf(params: CommonParams):
 
 @app.post("/marker/upload")
 async def convert_pdf_upload(
-    page_range: Optional[str] = Form(default=None),
-    force_ocr: Optional[bool] = Form(default=False),
-    paginate_output: Optional[bool] = Form(default=False),
-    output_format: Optional[str] = Form(default="markdown"),
+    page_range: str | None = Form(default=None),
+    force_ocr: bool = Form(default=False),
+    paginate_output: bool = Form(default=False),
+    output_format: str = Form(default="markdown"),
     file: UploadFile = File(
         ..., description="The PDF file to convert.", media_type="application/pdf"
     ),
 ):
+    if file.filename is None:
+        raise ValueError("Uploaded file must have a filename.")
     upload_path = os.path.join(UPLOAD_DIRECTORY, file.filename)
     with open(upload_path, "wb+") as upload_file:
         file_contents = await file.read()

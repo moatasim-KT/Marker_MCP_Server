@@ -5,6 +5,7 @@ from typing import List, Annotated
 import re
 
 import numpy as np
+from numpy.typing import NDArray
 import requests
 from pydantic import BaseModel
 
@@ -47,8 +48,8 @@ def verify_config_keys(obj):
 
     none_vals = ""
     for attr_name, annotation in annotations.items():
-        # Only check for type, not Annotated
-        if getattr(annotation, "__origin__", None) is str:
+        # Check if annotation is an Annotated type
+        if hasattr(annotation, '__origin__') and annotation.__origin__ is Annotated:
             value = getattr(obj, attr_name)
             if value is None:
                 none_vals += f"{attr_name}, "
@@ -61,7 +62,7 @@ def assign_config(cls, config: BaseModel | dict | None):
     if config is None:
         return
     elif isinstance(config, BaseModel):
-        dict_config = config.dict()
+        dict_config = config.model_dump()
     elif isinstance(config, dict):
         dict_config = config
     else:
@@ -93,20 +94,20 @@ def parse_range_str(range_str: str) -> List[int]:
     return page_lst
 
 
-def matrix_intersection_area(boxes1: np.ndarray, boxes2: np.ndarray) -> np.ndarray:
+def matrix_intersection_area(boxes1: List[List[float]], boxes2: List[List[float]]) -> np.ndarray:
     if len(boxes1) == 0 or len(boxes2) == 0:
         return np.zeros((len(boxes1), len(boxes2)))
 
-    boxes1 = np.array(boxes1)
-    boxes2 = np.array(boxes2)
+    boxes1_array: NDArray[np.floating] = np.array(boxes1)
+    boxes2_array: NDArray[np.floating] = np.array(boxes2)
 
-    boxes1 = boxes1[:, np.newaxis, :]  # Shape: (N, 1, 4)
-    boxes2 = boxes2[np.newaxis, :, :]  # Shape: (1, M, 4)
+    boxes1_expanded = boxes1_array[:, np.newaxis, :]  # Shape: (N, 1, 4)
+    boxes2_expanded = boxes2_array[np.newaxis, :, :]  # Shape: (1, M, 4)
 
-    min_x = np.maximum(boxes1[..., 0], boxes2[..., 0])  # Shape: (N, M)
-    min_y = np.maximum(boxes1[..., 1], boxes2[..., 1])
-    max_x = np.minimum(boxes1[..., 2], boxes2[..., 2])
-    max_y = np.minimum(boxes1[..., 3], boxes2[..., 3])
+    min_x = np.maximum(boxes1_expanded[..., 0], boxes2_expanded[..., 0])  # Shape: (N, M)
+    min_y = np.maximum(boxes1_expanded[..., 1], boxes2_expanded[..., 1])
+    max_x = np.minimum(boxes1_expanded[..., 2], boxes2_expanded[..., 2])
+    max_y = np.minimum(boxes1_expanded[..., 3], boxes2_expanded[..., 3])
 
     width = np.maximum(0, max_x - min_x)
     height = np.maximum(0, max_y - min_y)
@@ -114,22 +115,23 @@ def matrix_intersection_area(boxes1: np.ndarray, boxes2: np.ndarray) -> np.ndarr
     return width * height  # Shape: (N, M)
 
 
-def matrix_distance(boxes1: np.ndarray, boxes2: np.ndarray) -> np.ndarray:
+def matrix_distance(boxes1: List[List[float]], boxes2: List[List[float]]) -> np.ndarray:
     if len(boxes2) == 0:
         return np.zeros((len(boxes1), 0))
     if len(boxes1) == 0:
         return np.zeros((0, len(boxes2)))
 
-    boxes1 = np.array(boxes1)  # Shape: (N, 4)
-    boxes2 = np.array(boxes2)  # Shape: (M, 4)
+    boxes1_array: NDArray[np.floating] = np.array(boxes1)  # Shape: (N, 4)
+    boxes2_array: NDArray[np.floating] = np.array(boxes2)  # Shape: (M, 4)
 
-    boxes1_centers = (boxes1[:, :2] + boxes1[:, 2:]) / 2 # Shape: (N, 2)
-    boxes2_centers = (boxes2[:, :2] + boxes2[:, 2:]) / 2  # Shape: (M, 2)
+    boxes1_centers = (boxes1_array[:, :2] + boxes1_array[:, 2:]) / 2 # Shape: (N, 2)
+    boxes2_centers = (boxes2_array[:, :2] + boxes2_array[:, 2:]) / 2  # Shape: (M, 2)
 
-    boxes1_centers = boxes1_centers[:, np.newaxis, :]  # Shape: (N, 1, 2)
-    boxes2_centers = boxes2_centers[np.newaxis, :, :]  # Shape: (1, M, 2)
+    boxes1_centers_expanded = boxes1_centers[:, np.newaxis, :]  # Shape: (N, 1, 2)
+    boxes2_centers_expanded = boxes2_centers[np.newaxis, :, :]  # Shape: (1, M, 2)
 
-    distances = np.linalg.norm(boxes1_centers - boxes2_centers, axis=2)  # Shape: (N, M)
+    distances = np.linalg.norm(boxes1_centers_expanded - boxes2_centers_expanded, axis=2)  # Shape: (N, M)
+    return distances
     return distances
 
 

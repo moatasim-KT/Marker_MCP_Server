@@ -4,7 +4,7 @@ import os
 from streamlit_ace import st_ace
 from pydantic import BaseModel
 
-from marker.converters.extraction import ExtractionConverter
+from marker.converters.extraction import ExtractionConverter, ExtractionOutput
 from marker.scripts.common import (
     parse_args,
     load_models,
@@ -19,15 +19,17 @@ os.environ["IN_STREAMLIT"] = "true"
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 import tempfile
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 import streamlit as st
 
 from marker.config.parser import ConfigParser
 
 
-def extract_data(fname: str, config: dict, schema: str) -> (str, Dict[str, Any], dict):
-    pydantic_root: BaseModel = get_root_class(schema)
+def extract_data(fname: str, config: dict, schema: str) -> ExtractionOutput:
+    pydantic_root: Optional[BaseModel] = get_root_class(schema)
+    if pydantic_root is None:
+        raise ValueError("Could not extract root class from schema")
     json_schema = pydantic_root.model_json_schema()
 
     config["pdftext_workers"] = 1
@@ -50,7 +52,7 @@ st.set_page_config(layout="wide")
 col1, col2 = st.columns([0.5, 0.5])
 
 model_dict = load_models()
-cli_options = parse_args()
+cli_options: Dict[str, Any] = parse_args()
 
 st.markdown("""
 # Marker Extraction Demo
@@ -60,7 +62,7 @@ This app will let you use marker to do structured extraction.
 Warning: This can execute untrusted code entered into the schema panel.
 """)
 
-in_file: UploadedFile = st.sidebar.file_uploader(
+in_file: Optional[UploadedFile] = st.sidebar.file_uploader(
     "PDF, document, or image file:",
     type=["pdf", "png", "jpg", "jpeg", "gif", "pptx", "docx", "xlsx", "html", "epub"],
 )
@@ -113,15 +115,13 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     with open(temp_pdf, "wb") as f:
         f.write(in_file.getvalue())
 
-    cli_options.update(
-        {
-            "force_ocr": force_ocr,
-            "use_llm": use_llm,
-            "strip_existing_ocr": strip_existing_ocr,
-            "format_lines": format_lines,
-        }
-    )
-    rendered = extract_data(temp_pdf, cli_options, schema)
+    # Create a new dictionary with updated values
+    options = dict(cli_options)
+    options["force_ocr"] = force_ocr
+    options["use_llm"] = use_llm
+    options["strip_existing_ocr"] = strip_existing_ocr
+    options["format_lines"] = format_lines
+    rendered = extract_data(temp_pdf, options, schema)
 
 with col2:
     st.write("Output JSON")

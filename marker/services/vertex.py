@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any, Dict, Union
 
 from google import genai
 
@@ -6,7 +6,7 @@ from marker.services.gemini import BaseGeminiService
 
 class GoogleVertexService(BaseGeminiService):
     vertex_project_id: Annotated[
-        str,
+        str | None,
         "Google Cloud Project ID for Vertex AI.",
     ] = None
     vertex_location: Annotated[
@@ -23,12 +23,12 @@ class GoogleVertexService(BaseGeminiService):
     ] = False
 
     def get_google_client(self, timeout: int):
-        http_options = {"timeout": timeout * 1000} # Convert to milliseconds
+        http_options: Dict[str, Union[int, Dict[str, str]]] = {"timeout": timeout * 1000}  # Convert to milliseconds
         if self.vertex_dedicated:
             http_options["headers"] = {"x-vertex-ai-llm-request-type": "dedicated"}
         return genai.Client(
             vertexai=True,
             project=self.vertex_project_id,
             location=self.vertex_location,
-            http_options=http_options,
+            http_options=http_options,  # type: ignore
         )

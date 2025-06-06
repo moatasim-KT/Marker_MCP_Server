@@ -2,18 +2,19 @@ import base64
 import json
 import time
 from io import BytesIO
-from typing import List, Annotated, Union, T
+from typing import List, Annotated, Union, TypeVar, Optional
 
-import PIL
 from PIL import Image
 import anthropic
 from anthropic import RateLimitError, APITimeoutError
+from anthropic.types import MessageParam, ImageBlockParam, TextBlockParam
 from marker.logger import get_logger
 from pydantic import BaseModel
 
 from marker.schema.blocks import Block
 from marker.services import BaseService
 
+T = TypeVar('T')
 logger = get_logger()
 
 
@@ -21,35 +22,35 @@ class ClaudeService(BaseService):
     claude_model_name: Annotated[
         str, "The name of the Google model to use for the service."
     ] = "claude-3-7-sonnet-20250219"
-    claude_api_key: Annotated[str, "The Claude API key to use for the service."] = None
+    claude_api_key: Annotated[Optional[str], "The Claude API key to use for the service."] = None
     max_claude_tokens: Annotated[
         int, "The maximum number of tokens to use for a single Claude request."
     ] = 8192
 
-    def img_to_base64(self, img: PIL.Image.Image):
+    def img_to_base64(self, img: Image.Image):
         image_bytes = BytesIO()
         img.save(image_bytes, format="WEBP")
         return base64.b64encode(image_bytes.getvalue()).decode("utf-8")
 
     def prepare_images(
         self, images: Union[Image.Image, List[Image.Image]]
-    ) -> List[dict]:
+    ) -> List[ImageBlockParam]:
         if isinstance(images, Image.Image):
             images = [images]
 
         return [
-            {
-                "type": "image",
-                "source": {
+            ImageBlockParam(
+                type="image",
+                source={
                     "type": "base64",
                     "media_type": "image/webp",
                     "data": self.img_to_base64(img),
                 },
-            }
+            )
             for img in images
         ]
 
-    def validate_response(self, response_text: str, schema: type[T]) -> T:
+    def validate_response(self, response_text: str, schema: type[BaseModel]) -> Optional[dict]:
         response_text = response_text.strip()
         if response_text.startswith("```json"):
             response_text = response_text[7:]
@@ -68,7 +69,7 @@ class ClaudeService(BaseService):
                 out_schema = schema.model_validate_json(escaped_str)
                 return out_schema.model_dump()
             except Exception:
-                return
+                return None
 
     def get_client(self):
         return anthropic.Anthropic(
@@ -78,7 +79,7 @@ class ClaudeService(BaseService):
     def __call__(
         self,
         prompt: str,
-        image: PIL.Image.Image | List[PIL.Image.Image],
+        image: Image.Image | List[Image.Image],
         block: Block,
         response_schema: type[BaseModel],
         max_retries: int | None = None,
@@ -105,14 +106,14 @@ Respond only with the JSON schema, nothing else.  Do not include ```json, ```,  
         client = self.get_client()
         image_data = self.prepare_images(image)
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
+        messages: List[MessageParam] = [
+            MessageParam(
+                role="user",
+                content=[
                     *image_data,
-                    {"type": "text", "text": prompt},
+                    TextBlockParam(type="text", text=prompt),
                 ],
-            }
+            )
         ]
 
         tries = 0
@@ -126,7 +127,11 @@ Respond only with the JSON schema, nothing else.  Do not include ```json, ```,  
                     timeout=timeout,
                 )
                 # Extract and validate response
-                response_text = response.content[0].text
+                response_text = ""
+                for content in response.content:
+                    if content.type == 'text':
+                        response_text = content.text
+                        break
                 return self.validate_response(response_text, response_schema)
             except (RateLimitError, APITimeoutError) as e:
                 # Rate limit exceeded

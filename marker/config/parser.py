@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict
+from typing import Dict, Any
 
 import click
 
@@ -55,28 +55,10 @@ class ConfigParser:
             help="Disable multiprocessing.",
         )(fn)
         fn = click.option(
-            "--extract_images",
+            "--disable_image_extraction",
             is_flag=True,
             default=False,
-            help="Extract images from PDF.",
-        )(fn)
-        fn = click.option(
-            "--groq_api_key",
-            type=str,
-            default=None,
-            help="Groq API key. If not set, will use the GROQ_API_KEY environment variable.",
-        )(fn)
-        fn = click.option(
-            "--groq_model_name",
-            type=str,
-            default="compound-beta",
-            help="Groq model name to use (default: compound-beta)",
-        )(fn)
-        fn = click.option(
-            "--groq_base_url",
-            type=str,
-            default="https://api.groq.com/openai/v1",
-            help="Groq API base URL.",
+            help="Disable image extraction.",
         )(fn)
 
         # these are options that need a list transformation, i.e splitting/parsing a string
@@ -102,7 +84,7 @@ class ConfigParser:
         )(fn)
         return fn
 
-    def generate_config_dict(self) -> Dict[str, any]:
+    def generate_config_dict(self) -> Dict[str, Any]:
         config = {}
         output_dir = self.cli_options.get("output_dir", settings.OUTPUT_DIR)
         for k, v in self.cli_options.items():
@@ -131,15 +113,10 @@ class ConfigParser:
         # Backward compatibility for google_api_key
         if settings.GOOGLE_API_KEY:
             config["gemini_api_key"] = settings.GOOGLE_API_KEY
-
-        # Add Groq config from CLI or environment
-        groq_api_key = self.cli_options.get("groq_api_key") or os.environ.get("GROQ_API_KEY")
-        if groq_api_key:
-            config["groq_api_key"] = groq_api_key
-        if self.cli_options.get("groq_model_name"):
-            config["groq_model_name"] = self.cli_options["groq_model_name"]
-        if self.cli_options.get("groq_base_url"):
-            config["groq_base_url"] = self.cli_options["groq_base_url"]
+        
+        # Add Groq API key from environment
+        if settings.GROQ_API_KEY:
+            config["groq_api_key"] = settings.GROQ_API_KEY
 
         return config
 
@@ -150,7 +127,7 @@ class ConfigParser:
 
         service_cls = self.cli_options.get("llm_service", None)
         if service_cls is None:
-            service_cls = "marker.services.gemini.GoogleGeminiService"
+            service_cls = "marker.services.groq.GroqService"
         return service_cls
 
     def get_renderer(self):

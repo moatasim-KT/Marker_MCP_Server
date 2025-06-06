@@ -1,9 +1,9 @@
 import json
 import time
 from io import BytesIO
-from typing import List, Annotated
+from typing import List, Annotated, Optional
 
-import PIL
+from PIL import Image
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
@@ -21,7 +21,7 @@ class BaseGeminiService(BaseService):
         str, "The name of the Google model to use for the service."
     ] = "gemini-2.0-flash"
 
-    def img_to_bytes(self, img: PIL.Image.Image):
+    def img_to_bytes(self, img: Image.Image):
         image_bytes = BytesIO()
         img.save(image_bytes, format="WEBP")
         return image_bytes.getvalue()
@@ -32,7 +32,7 @@ class BaseGeminiService(BaseService):
     def __call__(
         self,
         prompt: str,
-        image: PIL.Image.Image | List[PIL.Image.Image],
+        image: Image.Image | List[Image.Image],
         block: Block,
         response_schema: type[BaseModel],
         max_retries: int | None = None,
@@ -92,7 +92,7 @@ class BaseGeminiService(BaseService):
 
 
 class GoogleGeminiService(BaseGeminiService):
-    gemini_api_key: Annotated[str, "The Google API key to use for the service."] = None
+    gemini_api_key: Annotated[Optional[str], "The Google API key to use for the service."] = None
 
     def get_google_client(self, timeout: int):
         return genai.Client(

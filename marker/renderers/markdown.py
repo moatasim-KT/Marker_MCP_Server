@@ -1,10 +1,10 @@
 import re
 from collections import defaultdict
-from typing import Annotated, Tuple, List
+from typing import Annotated, Tuple
 
 import regex
 import six
-from bs4.element import NavigableString
+from bs4 import NavigableString
 from markdownify import MarkdownConverter, whitespace_re
 from marker.logger import get_logger
 from pydantic import BaseModel
@@ -118,91 +118,99 @@ class Markdownify(MarkdownConverter):
             )
 
     def convert_table(self, el, text, convert_as_inline):
-        # Extract rows and columns
-        rows = el.find_all("tr")
-        total_rows = len(rows)
-        # Determine number of columns (max across all rows, considering colspan)
+        total_rows = len(el.find_all("tr"))
         colspans = []
         rowspan_cols = defaultdict(int)
-        for i, row in enumerate(rows):
+        for i, row in enumerate(el.find_all("tr")):
             row_cols = rowspan_cols[i]
             for cell in row.find_all(["td", "th"]):
                 colspan = int(cell.get("colspan", 1))
                 row_cols += colspan
                 for r in range(int(cell.get("rowspan", 1)) - 1):
-                    rowspan_cols[i + r] += colspan
+                    rowspan_cols[i + r] += (
+                        colspan  # Add the colspan to the next rows, so they get the correct number of columns
+                    )
             colspans.append(row_cols)
-        total_cols = max(colspans, default=0)
+        total_cols = max(colspans) if colspans else 0
 
-        # Initialize grid as List[List[str]]
-        grid: List[List[str]] = [["" for _ in range(total_cols)] for _ in range(total_rows)]
-        header_row_idx = None
-        for row_idx, tr in enumerate(rows):
+        grid = [[None for _ in range(total_cols)] for _ in range(total_rows)]
+
+        for row_idx, tr in enumerate(el.find_all("tr")):
             col_idx = 0
-            is_header_row = False
             for cell in tr.find_all(["td", "th"]):
                 # Skip filled positions
-                while col_idx < total_cols and grid[row_idx][col_idx] != "":
+                while col_idx < total_cols and grid[row_idx][col_idx] is not None:
                     col_idx += 1
-                value = get_formatted_table_text(cell)
-                value = value.replace("\n", " ").replace("|", " ").strip()
-                value = value.replace("<br>", "\\n")  # Markdown: show linebreaks as literal newlines
-                value = re.sub(r"\s+", " ", value)
+
+                # Fill in grid
+                value = (
+                    get_formatted_table_text(cell)
+                    .replace("\n", " ")
+                    .replace("|", " ")
+                    .strip()
+                )
                 rowspan = int(cell.get("rowspan", 1))
                 colspan = int(cell.get("colspan", 1))
-                if cell.name == "th":
-                    is_header_row = True
+
                 if col_idx >= total_cols:
+                    # Skip this cell if we're out of bounds
                     continue
+
                 for r in range(rowspan):
                     for c in range(colspan):
                         try:
-                            grid[row_idx + r][col_idx + c] = value if (r == 0 and c == 0) else ""
+                            if r == 0 and c == 0:
+                                grid[row_idx][col_idx] = value
+                            else:
+                                grid[row_idx + r][col_idx + c] = (
+                                    ""  # Empty cell due to rowspan/colspan
+                                )
                         except IndexError:
+                            # Sometimes the colspan/rowspan predictions can overflow
                             logger.info(
                                 f"Overflow in columns: {col_idx + c} >= {total_cols} or rows: {row_idx + r} >= {total_rows}"
                             )
                             continue
+
                 col_idx += colspan
-            if is_header_row and header_row_idx is None:
-                header_row_idx = row_idx
 
-        # Synthesize header if not present
-        if header_row_idx is None:
-            header = [f"Header {i+1}" for i in range(total_cols)]
-            grid.insert(0, header)
-            total_rows += 1
-            header_row_idx = 0
-
-        # Calculate column widths (including header)
+        markdown_lines = []
         col_widths = [0] * total_cols
         for row in grid:
             for col_idx, cell in enumerate(row):
                 if cell is not None:
                     col_widths[col_idx] = max(col_widths[col_idx], len(str(cell)))
 
-        markdown_lines = []
-        # Header row
-        header_cells = grid[header_row_idx]
-        header_line = []
-        for col_idx, cell in enumerate(header_cells):
-            cell = cell if cell is not None else ""
-            padding = col_widths[col_idx] - len(str(cell))
-            header_line.append(f" {cell}{' ' * padding} ")
-        markdown_lines.append("|" + "|".join(header_line) + "|")
-        # Separator row
-        sep_line = ["-" * (col_widths[col_idx] + 2) for col_idx in range(total_cols)]
-        markdown_lines.append("|" + "|".join(sep_line) + "|")
-        # Data rows
+        def add_header_line():
+            markdown_lines.append(
+                "|" + "|".join("-" * (width + 2) for width in col_widths) + "|"
+            )
+
+        # Generate markdown rows
+        added_header = False
         for i, row in enumerate(grid):
-            if i == header_row_idx:
+            is_empty_line = all(not cell for cell in row)
+            if is_empty_line and not added_header:
+                # Skip leading blank lines
                 continue
+
             line = []
             for col_idx, cell in enumerate(row):
-                cell = cell if cell is not None else ""
+                if cell is None:
+                    cell = ""
                 padding = col_widths[col_idx] - len(str(cell))
                 line.append(f" {cell}{' ' * padding} ")
             markdown_lines.append("|" + "|".join(line) + "|")
+
+            if not added_header:
+                # Skip empty lines when adding the header row
+                add_header_line()
+                added_header = True
+
+        # Handle one row tables
+        if total_rows == 1:
+            add_header_line()
+
         table_md = "\n".join(markdown_lines)
         return "\n\n" + table_md + "\n\n"
 
@@ -257,10 +265,10 @@ class MarkdownRenderer(HTMLRenderer):
         str, "The separator to use between pages.", "Default is '-' * 48."
     ] = "-" * 48
     inline_math_delimiters: Annotated[
-        Tuple[str, str], "The delimiters to use for inline math."
+        Tuple[str], "The delimiters to use for inline math."
     ] = ("$", "$")
     block_math_delimiters: Annotated[
-        Tuple[str, str], "The delimiters to use for block math."
+        Tuple[str], "The delimiters to use for block math."
     ] = ("$$", "$$")
 
     @property

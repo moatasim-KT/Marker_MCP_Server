@@ -44,37 +44,21 @@ class CustomClickPrinter(click.Command):
             Optional[str],
         ]
 
-        # Track added option names to avoid duplicates (Click treats --foo and --foo/--bar as different)
-        added_options = set()
-        # Skip attributes already handled by ConfigParser to avoid duplicates
-        skip_attrs = {"extract_images", "disable_multiprocessing", "groq_api_key", "groq_model_name", "groq_base_url"}
         # Add shared attribute options first
         for attr, info in shared_attrs.items():
-            if attr in skip_attrs:
-                continue
             if info["type"] in attr_types:
-                option_name = "--" + attr
-                if option_name in added_options:
-                    continue
-                # Only add as is_flag for booleans, never as type=bool
-                if info["is_flag"]:
-                    ctx.command.params.append(
-                        click.Option(
-                            [option_name],
-                            is_flag=True,
-                            help=" ".join(info["metadata"]) + f" (Applies to: {', '.join(info['classes'])})",
-                        )
+                ctx.command.params.append(
+                    click.Option(
+                        ["--" + attr],
+                        type=info["type"],
+                        help=" ".join(info["metadata"])
+                        + f" (Applies to: {', '.join(info['classes'])})",
+                        default=None,  # This is important, or it sets all the default keys again in config
+                        is_flag=info["is_flag"],
+                        flag_value=True if info["is_flag"] else None,
                     )
-                else:
-                    ctx.command.params.append(
-                        click.Option(
-                            [option_name],
-                            type=info["type"],
-                            help=" ".join(info["metadata"]) + f" (Applies to: {', '.join(info['classes'])})",
-                            default=None,
-                        )
-                    )
-                added_options.add(option_name)
+                )
+
         # Second pass: create class-specific options
         for base_type, base_type_dict in crawler.class_config_map.items():
             if display_help:
@@ -89,30 +73,26 @@ class CustomClickPrinter(click.Command):
                     "config"
                 ].items():
                     class_name_attr = class_name + "_" + attr
-                    option_name = "--" + class_name_attr
-                    if option_name in added_options:
-                        continue
+
+                    if display_help:
+                        click.echo(" " * 8 + f"{attr} ({formatted_type}):")
+                        click.echo(
+                            "\n".join([f"{' ' * 12}" + desc for desc in metadata])
+                        )
+
                     if attr_type in attr_types:
                         is_flag = attr_type in [bool, Optional[bool]] and not default
-                        # Only add as is_flag for booleans, never as type=bool
-                        if is_flag:
-                            ctx.command.params.append(
-                                click.Option(
-                                    [option_name, class_name_attr],
-                                    is_flag=True,
-                                    help=" ".join(metadata),
-                                )
+
+                        # Only add class-specific options
+                        ctx.command.params.append(
+                            click.Option(
+                                ["--" + class_name_attr, class_name_attr],
+                                type=attr_type,
+                                help=" ".join(metadata),
+                                is_flag=is_flag,
+                                default=None,  # This is important, or it sets all the default keys again in config
                             )
-                        else:
-                            ctx.command.params.append(
-                                click.Option(
-                                    [option_name, class_name_attr],
-                                    type=attr_type,
-                                    help=" ".join(metadata),
-                                    default=None,
-                                )
-                            )
-                        added_options.add(option_name)
+                        )
 
         if display_help:
             ctx.exit()

@@ -2,6 +2,7 @@ import json
 import os
 
 from bs4 import BeautifulSoup, Tag
+from bs4.element import PageElement
 from pydantic import BaseModel
 from PIL import Image
 
@@ -19,28 +20,33 @@ def unwrap_outer_tag(html: str):
     contents = list(soup.contents)
     if len(contents) == 1 and isinstance(contents[0], Tag) and contents[0].name == "p":
         # Unwrap the p tag
-        soup.p.unwrap()
+        p_tag = soup.p
+        if p_tag is not None:
+            p_tag.unwrap()
 
     return str(soup)
 
 
 def json_to_html(block: JSONBlockOutput | BlockOutput):
     # Utility function to take in json block output and give html for the block.
-    if not getattr(block, "children", None):
+    children = getattr(block, "children", None)
+    if not children:
         return block.html
     else:
-        child_html = [json_to_html(child) for child in block.children]
-        child_ids = [child.id for child in block.children]
+        child_html = [json_to_html(child) for child in children]
+        child_ids = [child.id for child in children]
 
         soup = BeautifulSoup(block.html, "html.parser")
         content_refs = soup.find_all("content-ref")
         for ref in content_refs:
-            src_id = ref.attrs["src"]
-            if src_id in child_ids:
-                child_soup = BeautifulSoup(
-                    child_html[child_ids.index(src_id)], "html.parser"
-                )
-                ref.replace_with(child_soup)
+            if isinstance(ref, Tag):
+                src_id = ref.get("src")
+                if src_id and str(src_id) in [str(cid) for cid in child_ids]:
+                    child_index = [str(cid) for cid in child_ids].index(str(src_id))
+                    child_soup = BeautifulSoup(
+                        child_html[child_index], "html.parser"
+                    )
+                    ref.replace_with(child_soup)
         return str(soup)
 
 
@@ -58,9 +64,9 @@ def text_from_rendered(rendered: BaseModel):
     elif isinstance(rendered, HTMLOutput):
         return rendered.html, "html", rendered.images
     elif isinstance(rendered, JSONOutput):
-        return rendered.model_dump_json(exclude=["metadata"], indent=2), "json", {}
+        return rendered.model_dump_json(exclude={"metadata"}, indent=2), "json", {}
     elif isinstance(rendered, OCRJSONOutput):
-        return rendered.model_dump_json(exclude=["metadata"], indent=2), "json", {}
+        return rendered.model_dump_json(exclude={"metadata"}, indent=2), "json", {}
     elif isinstance(rendered, ExtractionOutput):
         return rendered.document_json, "json", {}
     else:
@@ -75,9 +81,13 @@ def convert_if_not_rgb(image: Image.Image) -> Image.Image:
 
 def save_output(rendered: BaseModel, output_dir: str, fname_base: str):
     text, ext, images = text_from_rendered(rendered)
-    text = text.encode(settings.OUTPUT_ENCODING, errors="replace").decode(
-        settings.OUTPUT_ENCODING
-    )
+    if isinstance(text, str):
+        text = text.encode(settings.OUTPUT_ENCODING, errors="replace").decode(
+            settings.OUTPUT_ENCODING
+        )
+    else:
+        # text is a dict (from ExtractionOutput.document_json), convert to JSON string
+        text = json.dumps(text, indent=2)
 
     with open(
         os.path.join(output_dir, f"{fname_base}.{ext}"),
@@ -90,7 +100,9 @@ def save_output(rendered: BaseModel, output_dir: str, fname_base: str):
         "w+",
         encoding=settings.OUTPUT_ENCODING,
     ) as f:
-        f.write(json.dumps(rendered.metadata, indent=2))
+        # Check if the rendered object has metadata attribute
+        metadata = getattr(rendered, 'metadata', {})
+        f.write(json.dumps(metadata, indent=2))
 
     for img_name, img in images.items():
         img = convert_if_not_rgb(img)  # RGBA images can't save as JPG

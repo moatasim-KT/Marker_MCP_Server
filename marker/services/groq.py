@@ -1,15 +1,13 @@
 import base64
 import json
-import os
-import re
 import time
 from io import BytesIO
-from typing import List, Annotated, Union
+from typing import Annotated, List, Union, Optional
 
-import PIL
-from PIL import Image
-import requests
+import openai
+import PIL.Image
 from marker.logger import get_logger
+from openai import APITimeoutError, RateLimitError
 from pydantic import BaseModel
 
 from marker.schema.blocks import Block
@@ -19,55 +17,34 @@ logger = get_logger()
 
 
 class GroqService(BaseService):
-    groq_api_key: Annotated[str, "The Groq API key to use for the service."] = ""
-    groq_model_name: Annotated[str, "The Groq model name to use."] = "compound-beta"
-    groq_base_url: Annotated[str, "The base url for Groq API."] = "https://api.groq.com/openai/v1"
-    max_groq_tokens: Annotated[int, "The maximum number of tokens to use for a single Groq request."] = 8192
-    # Prioritized list of models to cycle through on rate limit
-    groq_model_list: List[str] = [
-        "meta-llama/llama-4-scout-17b-16e-instruct",
-        "meta-llama/llama-4-maverick-17b-128e-instruct",
-        "qwen-qwq-32b",
-        "deepseek-r1-distill-qwen-32b",
-        "deepseek-r1-distill-llama-70b",
-        "llama-3.3-70b-versatile",
-        "compound-beta",
-        "compound-beta-mini",
-    ]
+    groq_base_url: Annotated[
+        str, "The base url to use for Groq models.  No trailing slash."
+    ] = "https://api.groq.com/openai/v1"
+    groq_model: Annotated[str, "The model name to use for Groq."] = (
+        "llama-3.3-70b-versatile"
+    )
+    groq_api_key: Annotated[
+        Optional[str], "The API key to use for the Groq service."
+    ] = None
 
-    def __init__(self, config=None):
-        # Always prefer environment variables if set
-        api_key = os.environ.get("GROQ_API_KEY")
-        base_url = os.environ.get("GROQ_BASE_URL")
-        config_dict = dict(config) if config else {}
-        # Override groq_api_key and groq_base_url from env if not provided
-        if not config_dict.get('groq_api_key') and api_key:
-            config_dict['groq_api_key'] = api_key
-        if not config_dict.get('groq_base_url') and base_url:
-            config_dict['groq_base_url'] = base_url
-        self._model_index = 0
-        if 'groq_model_name' in config_dict:
-            # Start at the specified model if present in the list
-            try:
-                self._model_index = self.groq_model_list.index(config_dict['groq_model_name'])
-            except ValueError:
-                self._model_index = 0
-        self.groq_model_name = self.groq_model_list[self._model_index]
-        super().__init__(config_dict)
-
-    def image_to_base64(self, image: Image.Image):
+    def image_to_base64(self, image: PIL.Image.Image):
         image_bytes = BytesIO()
         image.save(image_bytes, format="WEBP")
         return base64.b64encode(image_bytes.getvalue()).decode("utf-8")
 
-    def prepare_images(self, images: Union[Image.Image, List[Image.Image]]) -> List[dict]:
-        if isinstance(images, Image.Image):
+    def prepare_images(
+        self, images: Union[PIL.Image.Image, List[PIL.Image.Image]]
+    ) -> List[dict]:
+        if isinstance(images, PIL.Image.Image):
             images = [images]
+
         return [
             {
                 "type": "image_url",
                 "image_url": {
-                    "url": "data:image/webp;base64,{}".format(self.image_to_base64(img)),
+                    "url": "data:image/webp;base64,{}".format(
+                        self.image_to_base64(img)
+                    ),
                 },
             }
             for img in images
@@ -76,7 +53,7 @@ class GroqService(BaseService):
     def __call__(
         self,
         prompt: str,
-        image: Image.Image | List[Image.Image],
+        image: PIL.Image.Image | List[PIL.Image.Image],
         block: Block,
         response_schema: type[BaseModel],
         max_retries: int | None = None,
@@ -84,94 +61,115 @@ class GroqService(BaseService):
     ):
         if max_retries is None:
             max_retries = self.max_retries
+
         if timeout is None:
             timeout = self.timeout
+
         if not isinstance(image, list):
             image = [image]
+
+        client = self.get_client()
         image_data = self.prepare_images(image)
-        json_content = json.dumps([
-            *image_data,
-            {"type": "text", "text": prompt},
-        ])
-        messages = [
-            {
-                "role": "user",
-                "content": json_content,
-            }
-        ]
+
         tries = 0
-        model_attempts = 0
-        max_model_attempts = len(self.groq_model_list)
-        while tries < max_retries and model_attempts < max_model_attempts:
+        while tries < max_retries:
             try:
-                headers = {
-                    "Authorization": f"Bearer {self.groq_api_key}",
-                    "Content-Type": "application/json",
-                }
-                payload = {
-                    "model": self.groq_model_name,
-                    "messages": messages,
-                    "max_tokens": self.max_groq_tokens,
-                }
-                print(f"[GroqService] Using model: {self.groq_model_name}")
-                print(f"[GroqService] Payload model: {payload['model']}")
-                print(f"[GroqService] Full payload: {json.dumps(payload, indent=2)}")
-                try:
-                    response = requests.post(
-                        f"{self.groq_base_url}/chat/completions",
-                        headers=headers,
-                        data=json.dumps(payload),
-                        timeout=timeout,
-                    )
-                    if response.status_code == 429:
-                        # Rate limit: try next model
-                        model_attempts += 1
-                        self._model_index = (self._model_index + 1) % len(self.groq_model_list)
-                        self.groq_model_name = self.groq_model_list[self._model_index]
-                        logger.warning(f"Groq rate limit hit. Switching to next model: {self.groq_model_name}")
-                        time.sleep(2 * model_attempts)
-                        continue
-                    response.raise_for_status()
-                except requests.exceptions.HTTPError as e:
-                    print(f"[GroqService] HTTPError: {e}")
-                    print(f"[GroqService] Response content: {getattr(e.response, 'text', '')}")
-                    raise
-                result = response.json()
-                response_text = result["choices"][0]["message"]["content"] if result.get("choices") else ""
-                print(f"[GroqService] Raw API response: {result}")
-                print(f"[GroqService] Response text: {response_text}")
-                total_tokens = result.get("usage", {}).get("total_tokens", 0)
-                block.update_metadata(llm_tokens_used=total_tokens, llm_request_count=1)
-                if not response_text:
-                    logger.error("Groq API returned empty response text.")
-                    return {}
-                # Try to extract JSON from the response text
-                json_str = None
-                # Look for ```json ... ``` block
-                match = re.search(r"```json\s*([\s\S]+?)```", response_text)
-                if match:
-                    json_str = match.group(1).strip()
+                # Groq doesn't support json_schema response format, so we use regular chat completion
+                # and add JSON formatting instructions to the prompt
+                json_prompt = f"""{prompt}
+
+Please respond with valid JSON only, following this exact schema:
+{response_schema.model_json_schema()}
+
+Ensure your response is valid JSON that matches the schema exactly."""
+
+                # Check if Groq model supports vision
+                # Groq vision models: llama-3.2-11b-vision-preview, llama-3.2-90b-vision-preview
+                is_vision_model = "vision" in self.groq_model.lower()
+                
+                if is_vision_model and len(image_data) > 0:
+                    # Use vision format for models that support it
+                    enhanced_messages = [  # type: ignore
+                        {
+                            "role": "user",
+                            "content": [
+                                *image_data,
+                                {"type": "text", "text": json_prompt},
+                            ],
+                        }
+                    ]
                 else:
-                    # Fallback: look for first {...} block
-                    match = re.search(r"\{[\s\S]+\}", response_text)
-                    if match:
-                        json_str = match.group(0)
-                if not json_str:
-                    logger.error(f"Groq response does not contain JSON. Raw: {response_text}")
-                    return {}
-                try:
-                    return json.loads(json_str)
-                except Exception as e:
-                    logger.error(f"Groq extracted JSON is not valid: {e}\nRaw: {json_str}")
-                    return {}
-            except requests.exceptions.RequestException as e:
+                    # For non-vision models, use text-only format and warn about image loss
+                    if len(image_data) > 0 and not is_vision_model:
+                        logger.warning(f"Model {self.groq_model} does not support vision. Image data will be ignored.")
+                    
+                    enhanced_messages = [  # type: ignore
+                        {
+                            "role": "user",
+                            "content": json_prompt,
+                        }
+                    ]
+
+                response = client.chat.completions.create(
+                    extra_headers={
+                        "X-Title": "Marker",
+                        "HTTP-Referer": "https://github.com/VikParuchuri/marker",
+                    },
+                    model=self.groq_model,
+                    messages=enhanced_messages,  # type: ignore
+                    timeout=timeout,
+                    temperature=0,  # Use deterministic output for better JSON parsing
+                )
+                response_text = response.choices[0].message.content
+                if response.usage and response.usage.total_tokens:
+                    total_tokens = response.usage.total_tokens
+                    block.update_metadata(llm_tokens_used=total_tokens, llm_request_count=1)
+                
+                if response_text:
+                    # Clean up the response text to extract JSON
+                    cleaned_text = response_text.strip()
+                    
+                    # Try to find JSON content if it's wrapped in markdown or other text
+                    if "```json" in cleaned_text:
+                        start = cleaned_text.find("```json") + 7
+                        end = cleaned_text.find("```", start)
+                        if end != -1:
+                            cleaned_text = cleaned_text[start:end].strip()
+                    elif "```" in cleaned_text:
+                        start = cleaned_text.find("```") + 3
+                        end = cleaned_text.find("```", start)
+                        if end != -1:
+                            cleaned_text = cleaned_text[start:end].strip()
+                    
+                    try:
+                        return json.loads(cleaned_text)
+                    except json.JSONDecodeError as json_err:
+                        logger.warning(f"Failed to parse JSON response from Groq: {json_err}")
+                        logger.debug(f"Raw response: {response_text}")
+                        # Try to extract JSON from the middle of the response
+                        import re
+                        json_match = re.search(r'\{.*\}', cleaned_text, re.DOTALL)
+                        if json_match:
+                            try:
+                                return json.loads(json_match.group())
+                            except json.JSONDecodeError:
+                                pass
+                        # If all else fails, return empty dict
+                        return {}
+                return {}
+            except (APITimeoutError, RateLimitError) as e:
+                # Rate limit exceeded
                 tries += 1
                 wait_time = tries * self.retry_wait_time
                 logger.warning(
-                    f"Groq API error: {e}. Retrying in {wait_time} seconds... (Attempt {tries}/{max_retries})"
+                    f"Rate limit error: {e}. Retrying in {wait_time} seconds... (Attempt {tries}/{max_retries})"
                 )
                 time.sleep(wait_time)
             except Exception as e:
                 logger.error(f"Groq inference failed: {e}")
                 break
+
         return {}
+
+    def get_client(self) -> openai.OpenAI:
+        return openai.OpenAI(api_key=self.groq_api_key, base_url=self.groq_base_url)

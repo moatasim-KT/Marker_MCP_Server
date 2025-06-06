@@ -2,13 +2,12 @@ import base64
 import json
 import time
 from io import BytesIO
-from typing import Annotated, List, Union
+from typing import Annotated, List, Union, Optional
 
 import openai
-import PIL
+import PIL.Image
 from marker.logger import get_logger
 from openai import APITimeoutError, RateLimitError
-from PIL import Image
 from pydantic import BaseModel
 
 from marker.schema.blocks import Block
@@ -25,7 +24,7 @@ class OpenAIService(BaseService):
         "gpt-4o-mini"
     )
     openai_api_key: Annotated[
-        str, "The API key to use for the OpenAI-like service."
+        Optional[str], "The API key to use for the OpenAI-like service."
     ] = None
 
     def image_to_base64(self, image: PIL.Image.Image):
@@ -34,9 +33,9 @@ class OpenAIService(BaseService):
         return base64.b64encode(image_bytes.getvalue()).decode("utf-8")
 
     def prepare_images(
-        self, images: Union[Image.Image, List[Image.Image]]
+        self, images: Union[PIL.Image.Image, List[PIL.Image.Image]]
     ) -> List[dict]:
-        if isinstance(images, Image.Image):
+        if isinstance(images, PIL.Image.Image):
             images = [images]
 
         return [
@@ -72,7 +71,7 @@ class OpenAIService(BaseService):
         client = self.get_client()
         image_data = self.prepare_images(image)
 
-        messages = [
+        messages = [  # type: ignore
             {
                 "role": "user",
                 "content": [
@@ -91,14 +90,18 @@ class OpenAIService(BaseService):
                         "HTTP-Referer": "https://github.com/VikParuchuri/marker",
                     },
                     model=self.openai_model,
-                    messages=messages,
+                    messages=messages,  # type: ignore
                     timeout=timeout,
                     response_format=response_schema,
                 )
                 response_text = response.choices[0].message.content
-                total_tokens = response.usage.total_tokens
-                block.update_metadata(llm_tokens_used=total_tokens, llm_request_count=1)
-                return json.loads(response_text)
+                if response.usage and response.usage.total_tokens:
+                    total_tokens = response.usage.total_tokens
+                    block.update_metadata(llm_tokens_used=total_tokens, llm_request_count=1)
+                
+                if response_text:
+                    return json.loads(response_text)
+                return {}
             except (APITimeoutError, RateLimitError) as e:
                 # Rate limit exceeded
                 tries += 1

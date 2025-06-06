@@ -48,27 +48,24 @@ class Document(BaseModel):
         if ignored_block_types is None:
             ignored_block_types = []
         next_block = None
+
+        # Try to find the next block in the current page
         page = self.get_page(block.page_id)
         if page is not None:
             next_block = page.get_next_block(block, ignored_block_types)
             if next_block:
                 return next_block
+
             # If no block found, search subsequent pages
-            try:
-                page_idx = self.pages.index(page)
-            except ValueError:
-                return None
-            for page in self.pages[page_idx + 1:]:
-                next_block = page.get_next_block(None, ignored_block_types)
+            page_index = self.pages.index(page)
+            for next_page in self.pages[page_index + 1:]:
+                next_block = next_page.get_next_block(None, ignored_block_types)
                 if next_block:
                     return next_block
         return None
 
     def get_next_page(self, page: PageGroup):
-        try:
-            page_idx = self.pages.index(page)
-        except ValueError:
-            return None
+        page_idx = self.pages.index(page)
         if page_idx + 1 < len(self.pages):
             return self.pages[page_idx + 1]
         return None
@@ -76,20 +73,16 @@ class Document(BaseModel):
     def get_prev_block(self, block: Block):
         page = self.get_page(block.page_id)
         if page is not None:
-            if prev_block := page.get_prev_block(block):
+            prev_block = page.get_prev_block(block)
+            if prev_block:
                 return prev_block
             prev_page = self.get_prev_page(page)
-            if not prev_page:
-                return None
-            if prev_page.structure is not None and len(prev_page.structure) > 0:
+            if prev_page is not None and hasattr(prev_page, 'structure') and prev_page.structure:
                 return prev_page.get_block(prev_page.structure[-1])
         return None
     
     def get_prev_page(self, page: PageGroup):
-        try:
-            page_idx = self.pages.index(page)
-        except ValueError:
-            return None
+        page_idx = self.pages.index(page)
         if page_idx > 0:
             return self.pages[page_idx - 1]
         return None
@@ -105,7 +98,7 @@ class Document(BaseModel):
         section_hierarchy = None
         for page in self.pages:
             rendered = page.render(self, None, section_hierarchy)
-            if hasattr(rendered, "section_hierarchy") and rendered.section_hierarchy is not None:
+            if rendered.section_hierarchy is not None:
                 section_hierarchy = rendered.section_hierarchy.copy()
             child_content.append(rendered)
 
@@ -114,7 +107,9 @@ class Document(BaseModel):
             html=self.assemble_html(child_content)
         )
 
-    def contained_blocks(self, block_types: Sequence[BlockTypes] = ()):  # default to empty tuple
+    def contained_blocks(self, block_types: Optional[Sequence[BlockTypes]] = None) -> List[Block]:
+        if block_types is None:
+            block_types = []
         blocks = []
         for page in self.pages:
             blocks += page.contained_blocks(self, block_types)

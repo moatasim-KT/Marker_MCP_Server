@@ -7,6 +7,7 @@ from marker.processors import BaseProcessor
 from marker.processors.llm import BaseLLMSimpleBlockProcessor
 from marker.processors.llm.llm_meta import LLMSimpleBlockMetaProcessor
 from marker.util import assign_config, download_font
+from .registry import register_converter, get_converter
 
 
 class BaseConverter:
@@ -61,3 +62,8 @@ class BaseConverter:
         )
         other_processors.insert(insert_position, meta_processor)
         return other_processors
+
+# Example usage:
+# @register_converter('my_custom_converter')
+# class MyCustomConverter:
+#     ...

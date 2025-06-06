@@ -67,7 +67,7 @@ class PdfConverter(BaseConverter):
         bool,
         "Enable higher quality processing with LLMs.",
     ] = False
-    default_processors: Tuple[BaseProcessor, ...] = (
+    default_processors: Tuple[Type[BaseProcessor], ...] = (
         OrderProcessor,
         LineMergeProcessor,
         BlockquoteProcessor,
@@ -93,7 +93,7 @@ class PdfConverter(BaseConverter):
         ReferenceProcessor,
         DebugProcessor,
     )
-    default_llm_service: BaseService = GoogleGeminiService
+    default_llm_service: Type[BaseService] = GoogleGeminiService
 
     def __init__(
         self,
@@ -111,31 +111,34 @@ class PdfConverter(BaseConverter):
         for block_type, override_block_type in self.override_map.items():
             register_block_class(block_type, override_block_type)
 
+        processor_classes: List[Type[BaseProcessor]]
         if processor_list is not None:
-            processor_list = strings_to_classes(processor_list)
+            processor_classes = strings_to_classes(processor_list)
         else:
-            processor_list = self.default_processors
+            processor_classes = list(self.default_processors)
 
+        renderer_class: Type
         if renderer:
-            renderer = strings_to_classes([renderer])[0]
+            renderer_class = strings_to_classes([renderer])[0]
         else:
-            renderer = MarkdownRenderer
+            renderer_class = MarkdownRenderer
 
+        llm_service_instance: Optional[BaseService] = None
         if llm_service:
             llm_service_cls = strings_to_classes([llm_service])[0]
-            llm_service = self.resolve_dependencies(llm_service_cls)
+            llm_service_instance = self.resolve_dependencies(llm_service_cls)
         elif config.get("use_llm", False):
-            llm_service = self.resolve_dependencies(self.default_llm_service)
+            llm_service_instance = self.resolve_dependencies(self.default_llm_service)
 
         # Inject llm service into artifact_dict so it can be picked up by processors, etc.
-        artifact_dict["llm_service"] = llm_service
-        self.llm_service = llm_service
+        artifact_dict["llm_service"] = llm_service_instance
+        self.llm_service = llm_service_instance
 
         self.artifact_dict = artifact_dict
-        self.renderer = renderer
+        self.renderer = renderer_class
 
-        processor_list = self.initialize_processors(processor_list)
-        self.processor_list = processor_list
+        processor_instances = self.initialize_processors(processor_classes)
+        self.processor_list = processor_instances
 
         self.layout_builder_class = LayoutBuilder
         if self.use_llm:
@@ -176,8 +179,9 @@ class PdfConverter(BaseConverter):
         structure_builder_cls = self.resolve_dependencies(StructureBuilder)
         structure_builder_cls(document)
 
-        for processor in self.processor_list:
-            processor(document)
+        if self.processor_list:
+            for processor in self.processor_list:
+                processor(document)
 
         return document
 

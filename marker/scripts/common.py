@@ -68,7 +68,7 @@ def get_page_image(pdf_file, page_num, dpi=96):
         page = doc[page_num]
         png_image = (
             page.render(
-                scale=dpi / 72,
+                scale=int(dpi / 72),
             )
             .to_pil()
             .convert("RGB")
@@ -87,7 +87,7 @@ def page_count(pdf_file: UploadedFile):
         return 1
 
 
-def pillow_image_to_base64_string(img: Image) -> str:
+def pillow_image_to_base64_string(img: Image.Image) -> str:
     buffered = io.BytesIO()
     img.save(buffered, format="JPEG")
     return base64.b64encode(buffered.getvalue()).decode("utf-8")

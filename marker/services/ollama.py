@@ -3,7 +3,7 @@ import json
 from io import BytesIO
 from typing import Annotated, List
 
-import PIL
+from PIL import Image
 import requests
 from marker.logger import get_logger
 from pydantic import BaseModel
@@ -22,7 +22,7 @@ class OllamaService(BaseService):
         "llama3.2-vision"
     )
 
-    def image_to_base64(self, image: PIL.Image.Image):
+    def image_to_base64(self, image: Image.Image):
         image_bytes = BytesIO()
         image.save(image_bytes, format="PNG")
         return base64.b64encode(image_bytes.getvalue()).decode("utf-8")
@@ -30,7 +30,7 @@ class OllamaService(BaseService):
     def __call__(
         self,
         prompt: str,
-        image: PIL.Image.Image | List[PIL.Image.Image],
+        image: Image.Image | List[Image.Image],
         block: Block,
         response_schema: type[BaseModel],
         max_retries: int | None = None,

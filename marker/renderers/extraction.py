@@ -16,33 +16,39 @@ class MergeData:
 
 
 def merge_keys(
-    json: dict | list, json2: dict, merge_data: MergeData, confidence_threshold: int = 3
+    json: dict | list, json2: dict | list, merge_data: MergeData, confidence_threshold: int = 3
 ):
-    if isinstance(json, list):
+    if isinstance(json, list) and isinstance(json2, list):
         json.extend(json2)
-
-    elif isinstance(json, dict):
+    elif isinstance(json, list) and isinstance(json2, dict):
+        # Can't merge list with dict, skip
+        return
+    elif isinstance(json, dict) and isinstance(json2, list):
+        # Can't merge dict with list, skip
+        return
+    elif isinstance(json, dict) and isinstance(json2, dict):
         for key in json:
-            if isinstance(json[key], dict):
-                merge_keys(json[key], json2[key], merge_data)
-            elif isinstance(json[key], list):
-                json[key] = json[key] + json2[key]
-            else:
-                value_2_correct = (
-                    merge_data.confidence_exists_2 > confidence_threshold
-                    and merge_data.confidence_value_2 > confidence_threshold
-                )
+            if key in json2:
+                if isinstance(json[key], dict) and isinstance(json2[key], dict):
+                    merge_keys(json[key], json2[key], merge_data)
+                elif isinstance(json[key], list) and isinstance(json2[key], list):
+                    json[key] = json[key] + json2[key]
+                else:
+                    value_2_correct = (
+                        merge_data.confidence_exists_2 > confidence_threshold
+                        and merge_data.confidence_value_2 > confidence_threshold
+                    )
 
-                if value_2_correct and json2[key]:
-                    json[key] = json2[key]
+                    if value_2_correct and json2[key]:
+                        json[key] = json2[key]
 
-                if not json[key] and json2[key]:
-                    json[key] = json2[key]
+                    if not json[key] and json2[key]:
+                        json[key] = json2[key]
 
 
 class ExtractionOutput(BaseModel):
     pages: Dict[int, ExtractionResult]
-    document_json: dict
+    document_json: dict | list
 
 
 class ExtractionRenderer(BaseRenderer):

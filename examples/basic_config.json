@@ -1,0 +1,10 @@
+{
+  "debug": true,
+  "output_format": "markdown",
+  "extract_images": true,
+  "use_llm": false,
+  "force_ocr": false,
+  "format_lines": true,
+  "pdftext_workers": 4,
+  "max_pages": null
+}

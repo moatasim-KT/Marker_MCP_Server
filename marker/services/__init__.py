@@ -1,6 +1,6 @@
 from typing import Optional, List, Annotated
 
-import PIL
+from PIL import Image
 from pydantic import BaseModel
 
 from marker.schema.blocks import Block
@@ -23,7 +23,7 @@ class BaseService:
     def __call__(
         self,
         prompt: str,
-        image: PIL.Image.Image | List[PIL.Image.Image],
+        image: Image.Image | List[Image.Image],
         block: Block,
         response_schema: type[BaseModel],
         max_retries: int | None = None,

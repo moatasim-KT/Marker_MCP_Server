@@ -20,13 +20,14 @@ from typing import Any, Dict
 
 import streamlit as st
 from PIL import Image
+from pydantic import BaseModel
 
 from marker.converters.pdf import PdfConverter
 from marker.config.parser import ConfigParser
 from marker.output import text_from_rendered
 
 
-def convert_pdf(fname: str, config_parser: ConfigParser) -> (str, Dict[str, Any], dict):
+def convert_pdf(fname: str, config_parser: ConfigParser) -> BaseModel:
     config_dict = config_parser.generate_config_dict()
     config_dict["pdftext_workers"] = 1
     converter_cls = PdfConverter
@@ -61,7 +62,7 @@ st.set_page_config(layout="wide")
 col1, col2 = st.columns([0.5, 0.5])
 
 model_dict = load_models()
-cli_options = parse_args()
+cli_options: Dict[str, Any] = parse_args()
 
 st.markdown("""
 # Marker Demo
@@ -71,7 +72,7 @@ This app will let you try marker, a PDF or image -> Markdown, HTML, JSON convert
 Find the project [here](https://github.com/VikParuchuri/marker).
 """)
 
-in_file: UploadedFile = st.sidebar.file_uploader(
+in_file = st.sidebar.file_uploader(
     "PDF, document, or image file:",
     type=["pdf", "png", "jpg", "jpeg", "gif", "pptx", "docx", "xlsx", "html", "epub"],
 )
@@ -128,19 +129,17 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     with open(temp_pdf, "wb") as f:
         f.write(in_file.getvalue())
 
-    cli_options.update(
-        {
-            "output_format": output_format,
-            "page_range": page_range,
-            "force_ocr": force_ocr,
-            "debug": debug,
-            "output_dir": settings.DEBUG_DATA_FOLDER if debug else None,
-            "use_llm": use_llm,
-            "strip_existing_ocr": strip_existing_ocr,
-            "format_lines": format_lines,
-            "disable_ocr_math": disable_ocr_math,
-        }
-    )
+    cli_options.update({
+        "output_format": output_format,
+        "page_range": page_range,
+        "force_ocr": force_ocr,
+        "debug": debug,
+        "output_dir": settings.DEBUG_DATA_FOLDER if debug else None,
+        "use_llm": use_llm,
+        "strip_existing_ocr": strip_existing_ocr,
+        "format_lines": format_lines,
+        "disable_ocr_math": disable_ocr_math,
+    })
     config_parser = ConfigParser(cli_options)
     rendered = convert_pdf(temp_pdf, config_parser)
     page_range = config_parser.generate_config_dict()["page_range"]
@@ -158,7 +157,7 @@ with col2:
 
 if debug:
     with col1:
-        debug_data_path = rendered.metadata.get("debug_data_path")
+        debug_data_path = getattr(rendered, 'metadata', {}).get("debug_data_path")
         if debug_data_path:
             pdf_image_path = os.path.join(debug_data_path, f"pdf_page_{first_page}.png")
             img = Image.open(pdf_image_path)

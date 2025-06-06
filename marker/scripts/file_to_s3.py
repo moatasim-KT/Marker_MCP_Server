@@ -16,8 +16,8 @@ S3_API_URL = "https://1afbe4656a6b40d982ab5e730a39f6b9.r2.cloudflarestorage.com"
 @click.option("--bucket_name", type=str, default="datalab")
 @click.option("--access_key_id", type=str, default="<access_key_id>")
 @click.option("--access_key_secret", type=str, default="<access_key_secret>")
-def main(filepath: str, s3_path: str, bucket_name: str, access_key_id: str, access_key_secret: str):
-    filepath = Path(filepath)
+def main(filepath_str: str, s3_path: str, bucket_name: str, access_key_id: str, access_key_secret: str):
+    filepath = Path(filepath_str)
     # Upload the files to S3
     s3_client = boto3.client(
         's3',

@@ -2,7 +2,7 @@ from typing import Optional
 
 from dotenv import find_dotenv
 from pydantic import computed_field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 import torch
 import os
 
@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # LLM
     GOOGLE_API_KEY: Optional[str] = ""
+    GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
 
     # General models
     TORCH_DEVICE: Optional[str] = (
@@ -52,14 +53,10 @@ class Settings(BaseSettings):
         else:
             return torch.float32
 
-    # Groq LLM
-    GROQ_API_KEY: Optional[str] = ""
-    GROQ_MODEL_NAME: Optional[str] = "compound-beta"
-    GROQ_BASE_URL: Optional[str] = "https://api.groq.com/openai/v1"
-
-    class Config:
-        env_file = find_dotenv("local.env")
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        env_file=find_dotenv("local.env"),
+        extra="ignore"
+    )
 
 
 settings = Settings()

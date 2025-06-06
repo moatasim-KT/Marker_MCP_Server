@@ -1,0 +1,10 @@
+{
+  "pdftext_workers": 8,
+  "parallel_factor": 4,
+  "extract_images": false,
+  "use_llm": false,
+  "force_ocr": false,
+  "output_format": "markdown",
+  "debug": false,
+  "disable_multiprocessing": false
+}

@@ -56,12 +56,12 @@ class PageGroup(Group):
         image = self.highres_image if highres else self.lowres_image
 
         # Avoid double OCR for certain elements
-        if remove_blocks and image is not None and isinstance(image, Image.Image):
+        if remove_blocks:
             image = image.copy()
             draw = ImageDraw.Draw(image)
             bad_blocks = [
                 block
-                for block in (self.current_children if self.children is not None else [])
+                for block in self.current_children
                 if block.block_type in remove_blocks
             ]
             for bad_block in bad_blocks:
@@ -74,8 +74,6 @@ class PageGroup(Group):
     @computed_field
     @property
     def current_children(self) -> List[Block]:
-        if self.children is None:
-            return []
         return [child for child in self.children if not child.removed]
 
     def get_next_block(
@@ -85,87 +83,30 @@ class PageGroup(Group):
     ):
         if ignored_block_types is None:
             ignored_block_types = []
-# 1) Enforce non‐null lists in the constructor so you can drop all the `if … is None` guards.
-#    E.g. using a dataclass or in __init__:
-from dataclasses import dataclass, field
 
-@dataclass
-class Page:
-    page_id: int
-    block_id: int = 0
-    children: list[Block]    = field(default_factory=list)
-    structure: list[BlockId] = field(default_factory=list)
-    excluded_block_types: set[BlockTypes] = field(default_factory=set)
-    maximum_assignment_distance: float = 20.0
-    # … other fields …
-
-# 2) Now simplify your helpers. For example, get_next_block:
-def get_next_block(
-    self,
-    block: Optional[Block] = None,
-    ignored_block_types: Optional[list[BlockTypes]] = None,
-) -> Block | None:
-    ignored = ignored_block_types or []
-    idx = (
-        self.structure.index(block.id) + 1
-        if block and block.id in self.structure
-        else 0
-    )
-    for bid in self.structure[idx:]:
-        if bid.block_type not in ignored:
-            return self.get_block(bid)
-    return None
-
-# 3) And get_prev_block:
-def get_prev_block(self, block: Block) -> Block | None:
-    try:
-        i = self.structure.index(block.id)
-    except ValueError:
-        return None
-    return self.get_block(self.structure[i-1]) if i > 0 else None
-
-# 4) get_block can stay a simple bounds check:
-def get_block(self, block_id: BlockId) -> Block | None:
-    i = block_id.block_id
-    if 0 <= i < len(self.children):
-        blk = self.children[i]
-        return blk if blk.block_id == i else None
-    return None
-
-# By guaranteeing `children` and `structure` are always lists,
-# you can remove every `if self.children is None`, `if self.structure is None`,
-# `hasattr(...)` and try/except for missing attributes in every helper.
-            return None
         structure_idx = 0
-        if block is not None and hasattr(block, "id"):
-            try:
-                structure_idx = self.structure.index(block.id) + 1
-            except (ValueError, AttributeError):
-                structure_idx = 0
+        if block is not None:
+            structure_idx = self.structure.index(block.id) + 1
+
+        # Iterate over blocks following the given block
         for next_block_id in self.structure[structure_idx:]:
             if next_block_id.block_type not in ignored_block_types:
                 return self.get_block(next_block_id)
+
         return None  # No valid next block found
 
     def get_prev_block(self, block: Block):
-        if self.structure is None or block is None or not hasattr(block, "id"):
-            return None
-        try:
-            block_idx = self.structure.index(block.id)
-        except (ValueError, AttributeError):
-            return None
+        block_idx = self.structure.index(block.id)
         if block_idx > 0:
             return self.get_block(self.structure[block_idx - 1])
         return None
 
     def add_block(self, block_cls: type[Block], polygon: PolygonBox) -> Block:
         self.incr_block_id()
-        # Provide block_description if required
         block = block_cls(
             polygon=polygon,
             block_id=self.block_id,
             page_id=self.page_id,
-            block_description=getattr(block_cls, 'block_description', "")
         )
         self.add_child(block)
         return block
@@ -177,12 +118,9 @@ def get_block(self, block_id: BlockId) -> Block | None:
         return block
 
     def get_block(self, block_id: BlockId) -> Block | None:
-        if self.children is None or block_id.block_id is None:
-            return None
-        if block_id.block_id < 0 or block_id.block_id >= len(self.children):
-            return None
         block: Block = self.children[block_id.block_id]
-        return None if block.block_id != block_id.block_id else block
+        assert block.block_id == block_id.block_id
+        return block
 
     def assemble_html(self, document, child_blocks, parent_structure=None):
         template = ""
@@ -190,24 +128,23 @@ def get_block(self, block_id: BlockId) -> Block | None:
             template += f"<content-ref src='{c.id}'></content-ref>"
         return template
 
-import numpy as np
-
     def compute_line_block_intersections(
         self, blocks: List[Block], provider_outputs: List[ProviderOutput]
     ):
         max_intersections = {}
+
         block_bboxes = [block.polygon.bbox for block in blocks]
         line_bboxes = [
             provider_output.line.polygon.bbox for provider_output in provider_outputs
         ]
-        # Convert to numpy arrays for matrix_intersection_area
-        block_bboxes_np = np.array(block_bboxes)
-        line_bboxes_np = np.array(line_bboxes)
-        intersection_matrix = matrix_intersection_area(line_bboxes_np, block_bboxes_np)
+
+        intersection_matrix = matrix_intersection_area(line_bboxes, block_bboxes)
+
         for line_idx, line in enumerate(provider_outputs):
             intersection_line = intersection_matrix[line_idx]
             if intersection_line.sum() == 0:
                 continue
+
             max_intersection = intersection_line.argmax()
             max_intersections[line_idx] = (
                 intersection_matrix[line_idx, max_intersection],
@@ -216,12 +153,17 @@ import numpy as np
         return max_intersections
 
     def replace_block(self, block: Block, new_block: Block):
+        # Handles incrementing the id
         self.add_full_block(new_block)
+
+        # Replace block id in structure
         super().replace_block(block, new_block)
-        if self.children is not None:
-            for child in self.children:
-                if hasattr(child, "replace_block"):
-                    child.replace_block(block, new_block)
+
+        # Replace block in structure of children
+        for child in self.children:
+            child.replace_block(block, new_block)
+
+        # Mark block as removed
         block.removed = True
 
     def identify_missing_blocks(
@@ -235,11 +177,14 @@ import numpy as np
         for line_idx in provider_line_idxs:
             if line_idx in assigned_line_idxs:
                 continue
+
+            # if the unassociated line is a new line with minimal area, we can skip it
             if (
                 provider_outputs[line_idx].line.polygon.area <= 1
                 and provider_outputs[line_idx].raw_text == "\n"
             ):
                 continue
+
             if new_block is None:
                 new_block = [(line_idx, provider_outputs[line_idx])]
             elif all(
@@ -258,6 +203,7 @@ import numpy as np
             assigned_line_idxs.add(line_idx)
         if new_block:
             new_blocks.append(new_block)
+
         return new_blocks
 
     def create_missing_blocks(
@@ -265,30 +211,28 @@ import numpy as np
         new_blocks: List[LINE_MAPPING_TYPE],
         block_lines: Dict[BlockId, LINE_MAPPING_TYPE],
     ):
-        if self.structure is None:
-            self.structure = []
         for new_block in new_blocks:
             block = self.add_block(Text, new_block[0][1].line.polygon)
-            block.source = "heuristics"  # type: ignore
+            block.source = "heuristics"
             block_lines[block.id] = new_block
+
             min_dist_idx = None
             min_dist = None
             for existing_block_id in self.structure:
                 existing_block = self.get_block(existing_block_id)
-                if existing_block is None or existing_block.block_type in self.excluded_block_types:
+                if existing_block.block_type in self.excluded_block_types:
                     continue
+                # We want to assign to blocks closer in y than x
                 dist = block.polygon.center_distance(
                     existing_block.polygon, x_weight=5, absolute=True
                 )
-                if dist > 0 and (min_dist_idx is None or (isinstance(min_dist, (int, float)) and dist < min_dist)):
+                if dist > 0 and min_dist_idx is None or dist < min_dist:
                     min_dist = dist
                     min_dist_idx = existing_block.id
+
             if min_dist_idx is not None:
-                try:
-                    existing_idx = self.structure.index(min_dist_idx)
-                    self.structure.insert(existing_idx + 1, block.id)
-                except (ValueError, AttributeError):
-                    self.structure.append(block.id)
+                existing_idx = self.structure.index(min_dist_idx)
+                self.structure.insert(existing_idx + 1, block.id)
             else:
                 self.structure.append(block.id)
 
@@ -298,36 +242,33 @@ import numpy as np
         text_extraction_method: str,
         keep_chars: bool = False,
     ):
+        # Add lines to the proper blocks, sorted in order
         for block_id, lines in block_lines.items():
             lines = sorted(lines, key=lambda x: x[0])
             block = self.get_block(block_id)
-            if block is None:
-                continue
             for line_idx, provider_output in lines:
                 line = provider_output.line
                 spans = provider_output.spans
                 self.add_full_block(line)
-                if hasattr(block, "add_structure"):
-                    block.add_structure(line)
-                if hasattr(block, "polygon") and hasattr(line, "polygon"):
-                    block.polygon = block.polygon.merge([line.polygon])
-                if hasattr(block, "text_extraction_method"):
-                    block.text_extraction_method = text_extraction_method  # type: ignore
+                block.add_structure(line)
+                block.polygon = block.polygon.merge([line.polygon])
+                block.text_extraction_method = text_extraction_method
                 for span_idx, span in enumerate(spans):
                     self.add_full_block(span)
-                    if hasattr(line, "add_structure"):
-                        line.add_structure(span)
+                    line.add_structure(span)
+
                     if not keep_chars:
                         continue
-                    chars = provider_output.chars if hasattr(provider_output, "chars") else None
-                    if chars is None or len(chars) == 0:
+
+                    # Provider doesn't have chars
+                    if len(provider_output.chars) == 0:
                         continue
-                    for char in chars[span_idx] if span_idx < len(chars) else []:
-                        if hasattr(char, "page_id"):
-                            char.page_id = self.page_id
+
+                    # Loop through characters associated with the span
+                    for char in provider_output.chars[span_idx]:
+                        char.page_id = self.page_id
                         self.add_full_block(char)
-                        if hasattr(span, "add_structure"):
-                            span.add_structure(char)
+                        span.add_structure(char)
 
     def merge_blocks(
         self,
@@ -364,11 +305,11 @@ import numpy as np
             for block in valid_blocks:
                 # We want to assign to blocks closer in y than x
                 dist = line.polygon.center_distance(block.polygon, x_weight=5)
-                if min_dist_idx is None or (isinstance(min_dist, (int, float)) and dist < min_dist):
+                if min_dist_idx is None or dist < min_dist:
                     min_dist = dist
                     min_dist_idx = block.id
 
-            if min_dist_idx is not None and isinstance(min_dist, (int, float)) and min_dist < self.maximum_assignment_distance:
+            if min_dist_idx is not None and min_dist < self.maximum_assignment_distance:
                 block_lines[min_dist_idx].append((line_idx, provider_output))
                 assigned_line_idxs.add(line_idx)
 
