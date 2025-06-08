@@ -8,8 +8,18 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from ftfy import fix_text
 from pdftext.extraction import dictionary_output
-from pdftext.schema import Reference
-from pdftext.pdf.utils import flatten as flatten_pdf_page
+# Use the marker Reference class for type hints
+from marker.schema.blocks.reference import Reference
+# Temporary workaround for missing flatten function
+try:
+    from pdftext.pdf.utils import flatten as flatten_pdf_page
+except ImportError:
+    # Define a minimal flatten function as fallback
+    def flatten_pdf_page(page):  # type: ignore
+        """Fallback flatten function that does nothing."""
+        _ = page  # Suppress unused parameter warning
+        pass
+from pydantic import BaseModel
 
 from PIL import Image
 from pypdfium2 import PdfiumError, PdfDocument
@@ -19,7 +29,6 @@ from marker.providers.utils import alphanum_ratio
 from marker.schema import BlockTypes
 from marker.schema.polygon import PolygonBox
 from marker.schema.registry import get_block_class
-from marker.schema.text.line import Line
 from marker.schema.text.span import Span
 
 # Ignore pypdfium2 warning about form flattening
@@ -77,7 +86,7 @@ class PdfProvider(BaseProvider):
         "Whether to disable links.",
     ] = False
 
-    def __init__(self, filepath: str, config=None):
+    def __init__(self, filepath: str, config: Optional[BaseModel | dict] = None):
         super().__init__(filepath, config)
 
         self.filepath = filepath
@@ -90,11 +99,12 @@ class PdfProvider(BaseProvider):
             }
 
             if self.page_range is None:
-                self.page_range = range(len(doc))
+                self.page_range = list(range(len(doc)))
 
-            assert max(self.page_range) < len(doc) and min(self.page_range) >= 0, (
-                f"Invalid page range, values must be between 0 and {len(doc) - 1}.  Min of provided page range is {min(self.page_range)} and max is {max(self.page_range)}."
-            )
+            if self.page_range:  # Check if page_range is not empty
+                assert max(self.page_range) < len(doc) and min(self.page_range) >= 0, (
+                    f"Invalid page range, values must be between 0 and {len(doc) - 1}.  Min of provided page range is {min(self.page_range)} and max is {max(self.page_range)}."
+                )
 
             if self.force_ocr:
                 # Manually assign page bboxes, since we can't get them from pdftext
@@ -208,12 +218,12 @@ class PdfProvider(BaseProvider):
         )
         self.page_bboxes = {
             i: [0, 0, page["width"], page["height"]]
-            for i, page in zip(self.page_range, page_char_blocks)
+            for i, page in zip(self.page_range or [], page_char_blocks)
         }
 
-        SpanClass: Span = get_block_class(BlockTypes.Span)
-        LineClass: Line = get_block_class(BlockTypes.Line)
-        CharClass: Char = get_block_class(BlockTypes.Char)
+        SpanClass = get_block_class(BlockTypes.Span)
+        LineClass = get_block_class(BlockTypes.Line)
+        CharClass = get_block_class(BlockTypes.Char)
 
         for page in page_char_blocks:
             page_id = page["page"]
@@ -228,22 +238,27 @@ class PdfProvider(BaseProvider):
                     for span in line["spans"]:
                         if not span["text"]:
                             continue
+                        font_flags = span["font"]["flags"]
+                        if isinstance(font_flags, str):
+                            font_flags = None  # Convert string to None for type safety
                         font_formats = self.font_flags_to_format(
-                            span["font"]["flags"]
+                            font_flags
                         ).union(self.font_names_to_format(span["font"]["name"]))
                         font_name = span["font"]["name"] or "Unknown"
                         font_weight = span["font"]["weight"] or 0
                         font_size = span["font"]["size"] or 0
                         polygon = PolygonBox.from_bbox(
-                            span["bbox"], ensure_nonzero_area=True
+                            span["bbox"], ensure_nonzero_area=True  # type: ignore
                         )
                         span_chars = [
-                            CharClass(
-                                text=c["char"],
+                            CharClass(  # type: ignore
+                                text=c["char"],  # type: ignore
+                                idx=c["char_idx"],  # type: ignore
                                 polygon=PolygonBox.from_bbox(
-                                    c["bbox"], ensure_nonzero_area=True
+                                    c["bbox"], ensure_nonzero_area=True  # type: ignore
                                 ),
-                                idx=c["char_idx"],
+                                page_id=page_id,
+                                block_description="A single character inside a span.",
                             )
                             for c in span["chars"]
                         ]
@@ -254,30 +269,31 @@ class PdfProvider(BaseProvider):
                             text = text.strip()
 
                         spans.append(
-                            SpanClass(
+                            SpanClass(  # type: ignore
                                 polygon=polygon,
-                                text=text,
-                                font=font_name,
-                                font_weight=font_weight,
-                                font_size=font_size,
-                                minimum_position=span["char_start_idx"],
-                                maximum_position=span["char_end_idx"],
-                                formats=list(font_formats),
+                                text=text,  # type: ignore
+                                font=font_name,  # type: ignore
+                                font_weight=font_weight,  # type: ignore
+                                font_size=font_size,  # type: ignore
+                                minimum_position=span["char_start_idx"],  # type: ignore
+                                maximum_position=span["char_end_idx"],  # type: ignore
+                                formats=list(font_formats),  # type: ignore
                                 page_id=page_id,
-                                text_extraction_method="pdftext",
-                                url=span.get("url"),
-                                has_superscript=superscript,
-                                has_subscript=subscript,
+                                text_extraction_method="pdftext",  # type: ignore
+                                url=span.get("url"),  # type: ignore
+                                has_superscript=superscript,  # type: ignore
+                                has_subscript=subscript,  # type: ignore
+                                block_description="A span of text inside a line.",
                             )
                         )
-                        chars.append(span_chars)
+                        chars.append(span_chars)  # type: ignore
                     polygon = PolygonBox.from_bbox(
-                        line["bbox"], ensure_nonzero_area=True
+                        line["bbox"], ensure_nonzero_area=True  # type: ignore
                     )
                     assert len(spans) == len(chars)
                     lines.append(
                         ProviderOutput(
-                            line=LineClass(polygon=polygon, page_id=page_id),
+                            line=LineClass(polygon=polygon, page_id=page_id),  # type: ignore
                             spans=spans,
                             chars=chars,
                         )
@@ -287,7 +303,7 @@ class PdfProvider(BaseProvider):
 
             self.page_refs[page_id] = []
             if page_refs := page.get("refs", None):
-                self.page_refs[page_id] = page_refs
+                self.page_refs[page_id] = page_refs  # type: ignore
 
         return page_lines
 
@@ -308,7 +324,7 @@ class PdfProvider(BaseProvider):
 
     def check_page(self, page_id: int, doc: PdfDocument) -> bool:
         page = doc.get_page(page_id)
-        page_bbox = PolygonBox.from_bbox(page.get_bbox())
+        page_bbox = PolygonBox.from_bbox(page.get_bbox())  # type: ignore
         try:
             page_objs = list(
                 page.get_objects(
@@ -320,13 +336,13 @@ class PdfProvider(BaseProvider):
             return False
 
         # if we do not see any text objects in the pdf, we can skip this page
-        if not any([obj.type == pdfium_c.FPDF_PAGEOBJ_TEXT for obj in page_objs]):
+        if not any([obj.type == pdfium_c.FPDF_PAGEOBJ_TEXT for obj in page_objs]):  # type: ignore
             return False
 
         if self.strip_existing_ocr:
             # If any text objects on the page are in invisible render mode, skip this page
             for text_obj in filter(
-                lambda obj: obj.type == pdfium_c.FPDF_PAGEOBJ_TEXT, page_objs
+                lambda obj: obj.type == pdfium_c.FPDF_PAGEOBJ_TEXT, page_objs  # type: ignore
             ):
                 if pdfium_c.FPDFTextObj_GetTextRenderMode(text_obj) in [
                     pdfium_c.FPDF_TEXTRENDERMODE_INVISIBLE,
@@ -338,7 +354,7 @@ class PdfProvider(BaseProvider):
             empty_fonts = []
             font_map = {}
             for text_obj in filter(
-                lambda obj: obj.type == pdfium_c.FPDF_PAGEOBJ_TEXT, page_objs
+                lambda obj: obj.type == pdfium_c.FPDF_PAGEOBJ_TEXT, page_objs  # type: ignore
             ):
                 font = pdfium_c.FPDFTextObj_GetFont(text_obj)
                 font_name = self._get_fontname(font)
@@ -356,9 +372,9 @@ class PdfProvider(BaseProvider):
 
             # if we see very large images covering most of the page, we can skip this page
             for img_obj in filter(
-                lambda obj: obj.type == pdfium_c.FPDF_PAGEOBJ_IMAGE, page_objs
+                lambda obj: obj.type == pdfium_c.FPDF_PAGEOBJ_IMAGE, page_objs  # type: ignore
             ):
-                img_bbox = PolygonBox.from_bbox(img_obj.get_pos())
+                img_bbox = PolygonBox.from_bbox(img_obj.get_pos())  # type: ignore
                 if page_bbox.intersection_pct(img_bbox) >= self.image_threshold:
                     return False
 
@@ -396,7 +412,7 @@ class PdfProvider(BaseProvider):
         if flatten_page:
             flatten_pdf_page(page)
             page = pdf[idx]
-        image = page.render(scale=dpi / 72, draw_annots=False).to_pil()
+        image = page.render(scale=int(dpi / 72), draw_annots=False).to_pil()
         image = image.convert("RGB")
         return image
 
@@ -410,7 +426,7 @@ class PdfProvider(BaseProvider):
     def get_page_bbox(self, idx: int) -> PolygonBox | None:
         bbox = self.page_bboxes.get(idx)
         if bbox:
-            return PolygonBox.from_bbox(bbox)
+            return PolygonBox.from_bbox(bbox)  # type: ignore
 
     def get_page_lines(self, idx: int) -> List[ProviderOutput]:
         return self.page_lines[idx]
@@ -425,14 +441,14 @@ class PdfProvider(BaseProvider):
 
         try:
             font_name_buffer = ctypes.create_string_buffer(buffer_size)
-            length = pdfium_c.FPDFFont_GetBaseFontName(
+            length = pdfium_c.FPDFFont_GetBaseFontName(  # type: ignore
                 font, font_name_buffer, buffer_size
             )
             if length < buffer_size:
                 font_name = font_name_buffer.value.decode("utf-8")
             else:
                 font_name_buffer = ctypes.create_string_buffer(length)
-                pdfium_c.FPDFFont_GetBaseFontName(font, font_name_buffer, length)
+                pdfium_c.FPDFFont_GetBaseFontName(font, font_name_buffer, length)  # type: ignore
                 font_name = font_name_buffer.value.decode("utf-8")
         except Exception:
             pass

@@ -6,11 +6,13 @@ This module defines the EpubProvider class, which extends PdfProvider to support
 import base64
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 import ebooklib
 from bs4 import BeautifulSoup, Tag
 from ebooklib import epub
 from weasyprint import CSS, HTML
+from pydantic import BaseModel
 
 from marker.providers.pdf import PdfProvider
 
@@ -55,7 +57,7 @@ td {
 class EpubProvider(PdfProvider):
     """Provider for converting EPUB files to PDF and providing PDF-based document processing."""
 
-    def __init__(self, filepath: str, config: dict | None = None) -> None:
+    def __init__(self, filepath: str, config: Optional[BaseModel | dict] = None) -> None:
         """Initialize EpubProvider by converting EPUB to PDF and initializing the PDF provider.
 
         Args:

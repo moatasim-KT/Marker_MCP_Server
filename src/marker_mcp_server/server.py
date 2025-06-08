@@ -8,12 +8,18 @@ import asyncio
 import json
 import logging
 import os
+import socket
 import sys
+import time
 import traceback
+import uvicorn
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mcp.server import FastMCP
+
+# Import dashboard
+from .dashboard import app as dashboard_app
 
 from .tools import (
     handle_batch_convert,
@@ -23,7 +29,6 @@ from .tools import (
     handle_start_server,
 )
 from .monitoring import initialize_monitoring, get_metrics_collector, shutdown_monitoring
-from .security import create_security_validator
 from .config import Config
 
 if TYPE_CHECKING:
@@ -46,6 +51,42 @@ try:
     import torch
 except ImportError:
     torch = None
+
+
+def is_port_available(host: str, port: int) -> bool:
+    """Check if a port is available for binding.
+    
+    Args:
+        host: The host to check
+        port: The port to check
+        
+    Returns:
+        True if port is available, False otherwise
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((host, port))
+            return True
+    except (socket.error, OSError):
+        return False
+
+
+def find_available_port(start_port: int, host: str = "127.0.0.1", max_attempts: int = 10) -> int:
+    """Find an available port starting from start_port.
+    
+    Args:
+        start_port: The starting port to check
+        host: The host to bind to
+        max_attempts: Maximum number of ports to check
+        
+    Returns:
+        An available port number, or -1 if none found
+    """
+    for port in range(start_port, start_port + max_attempts):
+        if is_port_available(host, port):
+            return port
+    return -1
 
 
 def safe_int(val: object) -> int:
@@ -88,6 +129,16 @@ async def handle_tool_call(
             default=str,
         ),
     )
+    
+    # Debug: Write arguments to file for inspection
+    try:
+        with open("debug_handle_tool_call.txt", "w") as f:
+            f.write(f"handle_tool_call called with name: {name}\n")
+            f.write(f"handle_tool_call arguments: {arguments}\n")
+            f.write(f"arguments type: {type(arguments)}\n")
+            f.write(f"arguments keys: {list(arguments.keys()) if isinstance(arguments, dict) else 'not a dict'}\n")
+    except Exception as e:
+        logger.error(f"Failed to write debug file: {e}")
     
     # Get metrics collector and start tracking
     metrics_collector = get_metrics_collector()
@@ -248,27 +299,32 @@ def configure_mcp_tools(mcp: FastMCP) -> None:
             dict[str, Any]: Result of the batch conversion.
 
         """
+        # Handle nested kwargs structure (common MCP pattern)
+        actual_kwargs = kwargs
+        if 'kwargs' in kwargs and isinstance(kwargs['kwargs'], dict):
+            actual_kwargs = kwargs['kwargs']
+        
         arguments = {
-            "in_folder": kwargs.get("folder_path"),
-            "output_dir": kwargs.get("output_dir") or None,
-            "chunk_idx": kwargs.get("chunk_idx", 0),
-            "num_chunks": kwargs.get("num_chunks", 1),
-            "max_files": kwargs.get("max_files")
-            if safe_int(kwargs.get("max_files", 0)) > 0 else None,
-            "workers": kwargs.get("workers", 5),
-            "skip_existing": kwargs.get("skip_existing", False),
-            "debug_print": kwargs.get("debug_print", False),
-            "max_tasks_per_worker": kwargs.get("max_tasks_per_worker", 10),
-            "debug": kwargs.get("debug", False),
-            "output_format": kwargs.get("output_format", "markdown"),
-            "processors": kwargs.get("processors") or None,
-            "config_json": kwargs.get("config_json") or None,
-            "disable_multiprocessing": kwargs.get("disable_multiprocessing", False),
-            "disable_image_extraction": kwargs.get("disable_image_extraction", False),
-            "page_range": kwargs.get("page_range") or None,
-            "converter_cls": kwargs.get("converter_cls") or None,
-            "llm_service": kwargs.get("llm_service") or None,
-            "use_llm": kwargs.get("use_llm", False),
+            "in_folder": actual_kwargs.get("folder_path"),
+            "output_dir": actual_kwargs.get("output_dir") or None,
+            "chunk_idx": actual_kwargs.get("chunk_idx", 0),
+            "num_chunks": actual_kwargs.get("num_chunks", 1),
+            "max_files": actual_kwargs.get("max_files")
+            if safe_int(actual_kwargs.get("max_files", 0)) > 0 else None,
+            "workers": actual_kwargs.get("workers", 5),
+            "skip_existing": actual_kwargs.get("skip_existing", False),
+            "debug_print": actual_kwargs.get("debug_print", False),
+            "max_tasks_per_worker": actual_kwargs.get("max_tasks_per_worker", 10),
+            "debug": actual_kwargs.get("debug", False),
+            "output_format": actual_kwargs.get("output_format", "markdown"),
+            "processors": actual_kwargs.get("processors") or None,
+            "config_json": actual_kwargs.get("config_json") or None,
+            "disable_multiprocessing": actual_kwargs.get("disable_multiprocessing", False),
+            "disable_image_extraction": actual_kwargs.get("disable_image_extraction", False),
+            "page_range": actual_kwargs.get("page_range") or None,
+            "converter_cls": actual_kwargs.get("converter_cls") or None,
+            "llm_service": actual_kwargs.get("llm_service") or None,
+            "use_llm": actual_kwargs.get("use_llm", False),
         }
         arguments = {k: v for k, v in arguments.items() if v is not None}
         result = await handle_tool_call("batch_convert", arguments)
@@ -289,23 +345,28 @@ def configure_mcp_tools(mcp: FastMCP) -> None:
             dict[str, Any]: Result of the single file conversion.
 
         """
+        # Handle nested kwargs structure (common MCP pattern)
+        actual_kwargs = kwargs
+        if 'kwargs' in kwargs and isinstance(kwargs['kwargs'], dict):
+            actual_kwargs = kwargs['kwargs']
+        
         arguments = {
-            "file_path": kwargs.get("file_path"),
-            "output_dir": kwargs.get("output_dir") or None,
-            "output_path": kwargs.get("output_path") or None,
-            "device": kwargs.get("device") or None,
-            "debug": kwargs.get("debug", False),
-            "output_format": kwargs.get("output_format", "markdown"),
-            "processors": kwargs.get("processors") or None,
-            "config_json": kwargs.get("config_json") or None,
-            "disable_multiprocessing": kwargs.get("disable_multiprocessing", False),
-            "disable_image_extraction": kwargs.get("disable_image_extraction", False),
-            "page_range": kwargs.get("page_range") or None,
-            "converter_cls": kwargs.get("converter_cls") or None,
-            "llm_service": kwargs.get("llm_service") or None,
-            "use_llm": kwargs.get("use_llm", False),
-            "max_pages": kwargs.get("max_pages")
-            if safe_int(kwargs.get("max_pages", 0)) > 0 else None,
+            "file_path": actual_kwargs.get("file_path"),
+            "output_dir": actual_kwargs.get("output_dir") or None,
+            "output_path": actual_kwargs.get("output_path") or None,
+            "device": actual_kwargs.get("device") or None,
+            "debug": actual_kwargs.get("debug", False),
+            "output_format": actual_kwargs.get("output_format", "markdown"),
+            "processors": actual_kwargs.get("processors") or None,
+            "config_json": actual_kwargs.get("config_json") or None,
+            "disable_multiprocessing": actual_kwargs.get("disable_multiprocessing", False),
+            "disable_image_extraction": actual_kwargs.get("disable_image_extraction", False),
+            "page_range": actual_kwargs.get("page_range") or None,
+            "converter_cls": actual_kwargs.get("converter_cls") or None,
+            "llm_service": actual_kwargs.get("llm_service") or None,
+            "use_llm": actual_kwargs.get("use_llm", False),
+            "max_pages": actual_kwargs.get("max_pages")
+            if safe_int(actual_kwargs.get("max_pages", 0)) > 0 else None,
         }
         arguments = {k: v for k, v in arguments.items() if v is not None}
         result = await handle_tool_call("single_convert", arguments)
@@ -326,20 +387,25 @@ def configure_mcp_tools(mcp: FastMCP) -> None:
             dict[str, Any]: Result of the chunked conversion.
 
         """
+        # Handle nested kwargs structure (common MCP pattern)
+        actual_kwargs = kwargs
+        if 'kwargs' in kwargs and isinstance(kwargs['kwargs'], dict):
+            actual_kwargs = kwargs['kwargs']
+        
         arguments = {
-            "in_folder": kwargs.get("in_folder"),
-            "out_folder": kwargs.get("out_folder") or None,
-            "chunk_size": kwargs.get("chunk_size", 10),
-            "debug": kwargs.get("debug", False),
-            "output_format": kwargs.get("output_format", "markdown"),
-            "processors": kwargs.get("processors") or None,
-            "config_json": kwargs.get("config_json") or None,
-            "disable_multiprocessing": kwargs.get("disable_multiprocessing", False),
-            "disable_image_extraction": kwargs.get("disable_image_extraction", False),
-            "page_range": kwargs.get("page_range") or None,
-            "converter_cls": kwargs.get("converter_cls") or None,
-            "llm_service": kwargs.get("llm_service") or None,
-            "use_llm": kwargs.get("use_llm", False),
+            "in_folder": actual_kwargs.get("in_folder"),
+            "out_folder": actual_kwargs.get("out_folder") or None,
+            "chunk_size": actual_kwargs.get("chunk_size", 10),
+            "debug": actual_kwargs.get("debug", False),
+            "output_format": actual_kwargs.get("output_format", "markdown"),
+            "processors": actual_kwargs.get("processors") or None,
+            "config_json": actual_kwargs.get("config_json") or None,
+            "disable_multiprocessing": actual_kwargs.get("disable_multiprocessing", False),
+            "disable_image_extraction": actual_kwargs.get("disable_image_extraction", False),
+            "page_range": actual_kwargs.get("page_range") or None,
+            "converter_cls": actual_kwargs.get("converter_cls") or None,
+            "llm_service": actual_kwargs.get("llm_service") or None,
+            "use_llm": actual_kwargs.get("use_llm", False),
         }
         arguments = {k: v for k, v in arguments.items() if v is not None}
         result = await handle_tool_call("chunk_convert", arguments)
@@ -362,22 +428,105 @@ def configure_mcp_tools(mcp: FastMCP) -> None:
             dict[str, Any]: Result of the batch pages conversion.
 
         """
+        debug_log_file = "/Users/moatasimfarooque/Downloads/marker-1.7.3/debug_mcp_server_batch_pages_convert_kwargs.txt"
+        
+        def _log_debug(message):
+            logger.info(message)
+            try:
+                with open(debug_log_file, "a") as f:
+                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
+            except Exception as e:
+                logger.error(f"Failed to write to debug log file {debug_log_file}: {e}")
+
+        _log_debug(f"batch_pages_convert raw kwargs received: {kwargs}")
+        _log_debug(f"kwargs type: {type(kwargs)}")
+        _log_debug(f"kwargs keys: {list(kwargs.keys()) if hasattr(kwargs, 'keys') else 'no keys method'}")
+
+        # Create debug file immediately (this part was for a different file, adapting for the new one)
+        try:
+            import json
+            debug_info = {
+                "function_called": "batch_pages_convert",
+                "kwargs_type": str(type(kwargs)),
+                "kwargs_keys": list(kwargs.keys()) if hasattr(kwargs, 'keys') else 'no keys method',
+                "kwargs_content_str": str(kwargs), # Avoid direct serialization if it causes issues
+                "kwargs_repr": repr(kwargs)
+            }
+            # Overwrite the main debug_mcp_call.txt with initial raw data for this specific call
+            with open("debug_mcp_call.txt", "w") as f: # This is the general MCP call debug
+                f.write(json.dumps(debug_info, indent=2))
+        except Exception as e:
+            _log_debug(f"Error writing to debug_mcp_call.txt: {e}")
+        
+        actual_kwargs = kwargs
+        if 'kwargs' in kwargs and isinstance(kwargs['kwargs'], dict):
+            _log_debug("Found nested 'kwargs' structure. Extracting parameters from kwargs['kwargs'].")
+            actual_kwargs = kwargs['kwargs']
+            _log_debug(f"Extracted actual_kwargs: {actual_kwargs}")
+            _log_debug(f"actual_kwargs type: {type(actual_kwargs)}")
+            _log_debug(f"actual_kwargs keys: {list(actual_kwargs.keys()) if hasattr(actual_kwargs, 'keys') else 'no keys method'}")
+        else:
+            _log_debug("No nested 'kwargs' structure found. Using raw kwargs as actual_kwargs.")
+
+        file_path = None
+        # Attempt 1: Get 'file_path'
+        file_path = actual_kwargs.get("file_path")
+        _log_debug(f"Attempt 1: actual_kwargs.get('file_path'): {file_path}")
+
+        # Attempt 2: Get 'fpath'
+        if file_path is None:
+            file_path = actual_kwargs.get("fpath")
+            _log_debug(f"Attempt 2: actual_kwargs.get('fpath'): {file_path}")
+
+        # Attempt 3: Get 'pdf_path'
+        if file_path is None:
+            file_path = actual_kwargs.get("pdf_path")
+            _log_debug(f"Attempt 3: actual_kwargs.get('pdf_path'): {file_path}")
+
+        # Attempt 4: Get 'input_file'
+        if file_path is None:
+            file_path = actual_kwargs.get("input_file")
+            _log_debug(f"Attempt 4: actual_kwargs.get('input_file'): {file_path}")
+        
+        # Attempt 5: Iterate through keys for a .pdf file if still None
+        if file_path is None:
+            _log_debug("file_path is still None. Iterating through actual_kwargs items...")
+            for key, value in actual_kwargs.items():
+                _log_debug(f"  Checking key: '{key}', value: '{value}', type: {type(value)}")
+                if isinstance(value, str) and value.endswith('.pdf'):
+                    _log_debug(f"Found potential PDF path in actual_kwargs['{key}']: {value}")
+                    file_path = value
+                    break
+            if file_path is None:
+                _log_debug("No .pdf file found by iterating through actual_kwargs.")
+        
+        _log_debug(f"Final file_path value before passing to arguments dict: {file_path}")
+        
         arguments = {
-            "file_path": kwargs.get("file_path"),
-            "output_dir": kwargs.get("output_dir") or None,
-            "pages_per_chunk": kwargs.get("pages_per_chunk", 5),
-            "combine_output": kwargs.get("combine_output", True),
-            "debug": kwargs.get("debug", False),
-            "output_format": kwargs.get("output_format", "markdown"),
-            "processors": kwargs.get("processors") or None,
-            "config_json": kwargs.get("config_json") or None,
-            "disable_multiprocessing": kwargs.get("disable_multiprocessing", False),
-            "disable_image_extraction": kwargs.get("disable_image_extraction", False),
-            "converter_cls": kwargs.get("converter_cls") or None,
-            "llm_service": kwargs.get("llm_service") or None,
-            "use_llm": kwargs.get("use_llm", False),
+            "file_path": file_path,
+            "output_dir": actual_kwargs.get("output_dir") or None,
+            "pages_per_chunk": actual_kwargs.get("pages_per_chunk", 5),
+            "combine_output": actual_kwargs.get("combine_output", True),
+            "debug": actual_kwargs.get("debug", False),
+            "output_format": actual_kwargs.get("output_format", "markdown"),
+            "processors": actual_kwargs.get("processors") or None,
+            "config_json": actual_kwargs.get("config_json") or None,
+            "disable_multiprocessing": actual_kwargs.get("disable_multiprocessing", False),
+            "disable_image_extraction": actual_kwargs.get("disable_image_extraction", False),
+            "converter_cls": actual_kwargs.get("converter_cls") or None,
+            "llm_service": actual_kwargs.get("llm_service") or None,
+            "use_llm": actual_kwargs.get("use_llm", False),
         }
-        arguments = {k: v for k, v in arguments.items() if v is not None}
+        
+        # Debug logging to see arguments before filtering
+        logger.info(f"Arguments before filtering: {arguments}")
+        
+        # Don't filter out file_path even if it's None - let the handler deal with it
+        arguments = {k: v for k, v in arguments.items() if k == "file_path" or v is not None}
+        
+        # Debug logging to see arguments after filtering
+        logger.info(f"Arguments after filtering: {arguments}")
+        
         result = await handle_tool_call("batch_pages_convert", arguments)
         return (
             result
@@ -396,9 +545,14 @@ def configure_mcp_tools(mcp: FastMCP) -> None:
             dict[str, Any]: Result of the server start attempt.
 
         """
+        # Handle nested kwargs structure (common MCP pattern)
+        actual_kwargs = kwargs
+        if 'kwargs' in kwargs and isinstance(kwargs['kwargs'], dict):
+            actual_kwargs = kwargs['kwargs']
+        
         arguments = {
-            "host": kwargs.get("host", "127.0.0.1"),
-            "port": kwargs.get("port", 8000),
+            "host": actual_kwargs.get("host", "127.0.0.1"),
+            "port": actual_kwargs.get("port", 8000),
         }
         result = await handle_tool_call("start_server", arguments)
         return (
@@ -448,11 +602,16 @@ def configure_mcp_tools(mcp: FastMCP) -> None:
 
         """
         try:
+            # Handle nested kwargs structure (common MCP pattern)
+            actual_kwargs = kwargs
+            if 'kwargs' in kwargs and isinstance(kwargs['kwargs'], dict):
+                actual_kwargs = kwargs['kwargs']
+            
             metrics_collector = get_metrics_collector()
             if not metrics_collector:
                 return {"error": "Monitoring not initialized"}
 
-            hours = int(kwargs.get("hours", 1))
+            hours = safe_int(actual_kwargs.get("hours", 1))
             summary = metrics_collector.get_metrics_summary(hours)
             return {"success": True, "metrics": summary}
         except Exception as e:
@@ -528,7 +687,6 @@ def parse_arguments() -> tuple[argparse.Namespace, list[str]]:
 
     Returns:
         tuple: Parsed arguments and unknown arguments.
-
     """
     parser = argparse.ArgumentParser(
         description="Marker MCP Server - PDF conversion tools via MCP",
@@ -552,57 +710,273 @@ def parse_arguments() -> tuple[argparse.Namespace, list[str]]:
         action="store_true",
         help="Enable debug logging",
     )
+    
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose output",
+    )
+    
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="The host to bind the server to (default: 127.0.0.1)",
+    )
 
     return parser.parse_known_args()
+
+
+async def run_dashboard(host: str, port: int):
+    """Run the dashboard server."""
+    logger.info(f"Starting dashboard server on {host}:{port}")
+    try:
+        config = uvicorn.Config(
+            app=dashboard_app,
+            host=host,
+            port=port,
+            log_level="info"
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
+    except Exception as e:
+        logger.error(f"Dashboard server error: {e}")
+        raise
+
+async def _start_dashboard_safely(server: uvicorn.Server, port: int) -> None:
+    """Safely start the dashboard server without crashing the main process.
+    
+    Args:
+        server: The uvicorn server instance
+        port: The port to start on
+    """
+    # Monkey patch sys.exit to prevent uvicorn from crashing our process
+    original_exit = sys.exit
+    
+    def safe_exit(code=0):
+        """Replacement for sys.exit that logs instead of exiting."""
+        logger.warning(f"Dashboard server attempted to exit with code {code} (prevented)")
+        raise SystemExit(code)
+    
+    try:
+        # Temporarily replace sys.exit
+        sys.exit = safe_exit
+        logger.info(f"Starting dashboard server on port {port}...")
+        await server.serve()
+        logger.info(f"Dashboard server started successfully on port {port}")
+    except SystemExit as e:
+        # uvicorn calls sys.exit() on binding errors, catch it here
+        logger.warning(f"Dashboard server exited due to binding error on port {port} (exit code: {e.code})")
+        raise  # Re-raise to let the caller know it failed
+    except OSError as e:
+        if "Address already in use" in str(e):
+            logger.warning(f"Dashboard port {port} is already in use")
+        else:
+            logger.warning(f"Dashboard server OS error: {e}")
+        raise  # Re-raise to let the caller know it failed
+    except Exception as e:
+        logger.warning(f"Dashboard server error: {e}")
+        raise  # Re-raise to let the caller know it failed
+    finally:
+        # Always restore the original sys.exit
+        sys.exit = original_exit
+
+
+# Global variables to track dashboard server state
+_dashboard_server = None
+_dashboard_task = None
+
+async def main_async():
+    """Run the Marker MCP server main loop with async support."""
+    global _dashboard_server, _dashboard_task
+    
+    args, unknown = parse_arguments()
+
+    # Set log level from environment variable or command line
+    log_level = get_log_level()
+    if args.verbose or args.debug:
+        log_level = logging.DEBUG
+    logging.basicConfig(level=log_level)
+    logger.setLevel(log_level)
+
+    logger.info("Starting Marker MCP Server...")
+    log_startup_info(logger)
+
+    # Initialize configuration
+    config = Config()
+    
+    # Ensure required directories exist
+    metrics_dir = os.path.expanduser("~/.cache/marker-mcp/metrics")
+    logs_dir = os.path.expanduser("~/.cache/marker-mcp/logs")
+    os.makedirs(metrics_dir, exist_ok=True)
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    # Initialize monitoring with the config
+    metrics_collector = None
+    try:
+        # Pass the config's _config attribute which contains the AppConfig object
+        initialize_monitoring(config._config)
+        metrics_collector = get_metrics_collector()
+        if metrics_collector:
+            # Start metrics collection in the background
+            asyncio.create_task(metrics_collector._collect_metrics_loop())
+            logger.info("Monitoring system initialized")
+        else:
+            logger.warning("Failed to initialize metrics collector")
+    except Exception as e:
+        logger.error(f"Failed to initialize monitoring: {e}", exc_info=True)
+    
+    # Get server host and port from config
+    server_host = '127.0.0.1'
+    server_port = 8000
+    
+    # Try to get server config from the Config object
+    try:
+        if hasattr(config, '_config') and hasattr(config._config, 'server'):
+            server_config = config._config.server
+            if hasattr(server_config, 'host'):
+                server_host = server_config.host
+            if hasattr(server_config, 'port'):
+                server_port = server_config.port
+    except Exception as e:
+        logger.debug(f"Could not access server config: {e}, using defaults")
+    
+    # Start dashboard in the background if not already running
+    dashboard_port = server_port + 1
+    
+    # Check if dashboard should be started
+    dashboard_started = False
+    dashboard_host = "127.0.0.1"  # Use localhost for better compatibility
+    
+    if _dashboard_server is None:
+        # First, check if the port is available
+        if not is_port_available(dashboard_host, dashboard_port):
+            logger.warning(f"Dashboard port {dashboard_port} is already in use, trying to find an available port...")
+            available_port = find_available_port(dashboard_port, dashboard_host, 10)
+            if available_port != -1:
+                dashboard_port = available_port
+                logger.info(f"Using alternative port {dashboard_port} for dashboard")
+            else:
+                logger.warning("No available ports found for dashboard, skipping dashboard startup")
+                dashboard_port = None
+        
+        if dashboard_port is not None:
+            logger.info(f"Starting dashboard server on {dashboard_host}:{dashboard_port}...")
+            try:
+                # Create uvicorn config with proper error handling
+                dashboard_config = uvicorn.Config(
+                    app=dashboard_app,
+                    host=dashboard_host,
+                    port=dashboard_port,
+                    log_level="error",  # Reduce log noise
+                    reload=False,
+                    log_config=None,
+                    access_log=False
+                )
+                _dashboard_server = uvicorn.Server(dashboard_config)
+                
+                # Start the server in a task that won't crash the main process
+                _dashboard_task = asyncio.create_task(_start_dashboard_safely(_dashboard_server, dashboard_port))
+                
+                # Give it more time to start and check multiple times
+                for attempt in range(5):
+                    await asyncio.sleep(0.5)
+                    # Check if it's actually running (if port is no longer available, server started)
+                    if not is_port_available(dashboard_host, dashboard_port):
+                        logger.info(f"Dashboard server started successfully on port {dashboard_port}")
+                        logger.info(f"Dashboard available at http://{dashboard_host}:{dashboard_port}")
+                        dashboard_started = True
+                        break
+                    
+                    # Check if the task failed
+                    if _dashboard_task.done():
+                        try:
+                            await _dashboard_task  # This will raise the exception if there was one
+                        except Exception as task_error:
+                            logger.warning(f"Dashboard task failed: {task_error}")
+                            break
+                
+                if not dashboard_started:
+                    logger.warning(f"Dashboard did not start successfully on port {dashboard_port}")
+                
+            except Exception as e:
+                logger.warning(f"Failed to start dashboard server: {e}")
+                if _dashboard_task:
+                    _dashboard_task.cancel()
+                    try:
+                        await _dashboard_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+                _dashboard_server = None
+                _dashboard_task = None
+    else:
+        logger.info("Dashboard is already running")
+        dashboard_started = True
+    
+    if not dashboard_started:
+        logger.info("Continuing without dashboard - MCP server functionality will not be affected")
+    
+    # Start the MCP server
+    try:
+        # Create MCP server
+        mcp = FastMCP(
+            name="Marker MCP Server",
+            version="1.0.0",
+            description="MCP server for Marker conversion tools",
+            config=config,  # Pass the config object directly
+        )
+        
+        # Configure MCP tools
+        configure_mcp_tools(mcp)
+        
+        # Get host from config or use default
+        server_host = '127.0.0.1'
+        try:
+            if hasattr(config, '_config') and hasattr(config._config, 'server') and hasattr(config._config.server, 'host'):
+                server_host = config._config.server.host
+        except Exception:
+            pass  # Use default
+        
+        # Start the MCP server
+        logger.info(f"Starting MCP server on {server_host}:{server_port}")
+        await mcp.run_stdio_async()
+        
+    except asyncio.CancelledError:
+        logger.info("MCP server task cancelled")
+    except Exception as e:
+        logger.error(f"Error in MCP server: {e}", exc_info=True)
+        raise
+    finally:
+        # Clean up dashboard server
+        if _dashboard_server is not None:
+            logger.info("Shutting down dashboard server...")
+            _dashboard_server.should_exit = True
+            if _dashboard_task and not _dashboard_task.done():
+                _dashboard_task.cancel()
+                try:
+                    await _dashboard_task
+                except (asyncio.CancelledError, Exception) as e:
+                    logger.debug(f"Dashboard shutdown: {e}")
+            _dashboard_server = None
+            _dashboard_task = None
+        
+        # Clean up monitoring
+        if metrics_collector is not None:
+            logger.info("Shutting down monitoring...")
+            await shutdown_monitoring()
+        logger.info("Server stopped")
 
 
 async def main() -> None:
     """Run the Marker MCP server main loop."""
     try:
-        # Configure logging
-        log_level = get_log_level()
-        logging.basicConfig(
-            level=getattr(logging, log_level, logging.INFO),
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            stream=sys.stderr,
-        )
-        log_startup_info(logger)
+        # Simply call main_async which handles everything
+        await main_async()
         
-        # Initialize configuration
-        config = Config()
-        
-        # Initialize monitoring
-        metrics_collector = initialize_monitoring(config._config)
-        await metrics_collector.start()
-        logger.info("Monitoring system initialized")
-        
-        # Initialize security validator
-        create_security_validator(config._config)
-        logger.info("Security validator initialized")
-        
-        mcp = FastMCP("Marker MCP Server")
-        configure_mcp_tools(mcp)
-        logger.info("FastMCP server configured successfully")
-        logger.info(
-            "Available tools: batch_convert, batch_pages_convert, single_convert, "
-            "chunk_convert, start_server, get_system_health, get_metrics_summary",
-        )
-        logger.info("-" * 40)
-        logger.info("Waiting for connections...")
-        logger.debug("Starting FastMCP server with stdio transport...")
-        await mcp.run_stdio_async()
-    except asyncio.CancelledError:
-        logger.info("Server shutdown requested")
+    except KeyboardInterrupt:
+        logger.info("Shutdown requested...")
     except Exception as e:
-        error_msg = f"Fatal error in main: {e!s}\n{traceback.format_exc()}"
-        logger.exception(error_msg)
-        sys.stderr.write(f"{error_msg}\n")
-        sys.exit(1)
-    finally:
-        # Cleanup
-        await shutdown_monitoring()
-        logger.info("Marker MCP server shutting down")
-        logger.info("=" * 40)
+        logger.error(f"Fatal error: {e}", exc_info=True)
 
 
 if __name__ == "__main__":
@@ -624,10 +998,8 @@ if __name__ == "__main__":
             os.environ["LOG_LEVEL"] = "DEBUG"
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Server interrupted by user")
-        sys.exit(0)
-    except Exception:
-        logger.exception(
-            "Unhandled exception occurred:\n%s", traceback.format_exc(),
-        )
+        print("\nShutting down...")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        traceback.print_exc()
         sys.exit(1)

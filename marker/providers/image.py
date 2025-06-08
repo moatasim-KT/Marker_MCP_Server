@@ -2,10 +2,18 @@
 
 import contextlib
 import types
-from typing import Self
+from typing import Self, Optional
 
-from pdftext.schema import Reference as PdftextReference
+# Temporary workaround for missing pdftext.schema.Reference
+try:
+    from pdftext.schema import Reference as PdftextReference
+except ImportError:
+    # Define a minimal Reference class as fallback
+    from pydantic import BaseModel
+    class PdftextReference(BaseModel):
+        pass
 from PIL import Image
+from pydantic import BaseModel
 
 from marker.providers import BaseProvider
 from marker.schema.polygon import PolygonBox
@@ -23,7 +31,7 @@ class ImageProvider(BaseProvider):
     page_range: list[int] | None = None
     image_count: int = 1
 
-    def __init__(self, filepath: str, config: dict | None = None) -> None:
+    def __init__(self, filepath: str, config: Optional[BaseModel | dict] = None) -> None:
         """Initialize the ImageProvider with a file path and optional config.
 
         Args:

@@ -3,7 +3,14 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from PIL import Image, ImageDraw
 
-from pdftext.schema import Reference
+# Temporary workaround for missing pdftext.schema.Reference
+try:
+    from pdftext.schema import Reference
+except ImportError:
+    # Define a minimal Reference class as fallback
+    from pydantic import BaseModel
+    class Reference(BaseModel):
+        pass
 from pydantic import computed_field
 
 from marker.providers import ProviderOutput

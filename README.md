@@ -1,20 +1,16 @@
 # Marker MCP Server - Enhanced PDF Processing
 
-An advanced Model Context Protocol (MCP) server for high-quality PDF to Markdown conversion with comprehensive monitoring, security, testing, and batch processing capabilities.
+An advanced MCP (Model Context Protocol) server for high-quality PDF to Markdown conversion with comprehensive monitoring, security, and testing capabilities.
 
-**Status**: ✅ Production Ready | All Tests Passing | Comprehensive Feature Set
+## 🎯 Project Overview
 
-## 📋 Table of Contents
-
-- [🚀 Quick Start](#-quick-start)
-- [🛠️ MCP Tools Available](#️-mcp-tools-available)
-- [🔧 Advanced Configuration](#-advanced-configuration)
-- [📊 Monitoring & Performance](#-monitoring--performance)
-- [🛡️ Security Features](#️-security-features)
-- [🧪 Testing Suite](#-testing-suite)
-- [📚 API Documentation](#-api-documentation)
-- [🤝 Contributing](#-contributing)
-- [📄 License & Legal](#-license--legal)
+This implementation provides a comprehensive MCP server with advanced features including:
+- Real-time monitoring and metrics collection
+- Advanced security framework
+- Comprehensive testing suite
+- High-performance PDF processing
+- LLM integration for enhanced output quality
+- Batch and chunked processing capabilities
 
 ## 🚀 Quick Start
 
@@ -26,9 +22,6 @@ pip install .
 
 # Or using poetry
 poetry install
-
-# Install development dependencies (for testing)
-pip install -r requirements-dev.txt
 ```
 
 ### Basic Usage
@@ -47,74 +40,19 @@ python -m src.marker_mcp_server.server --version
 python -m src.marker_mcp_server.server --debug
 ```
 
-### System Requirements
-
-- **Python**: 3.8+ (tested with 3.13)
-- **Memory**: 4GB recommended minimum
-- **Storage**: 1GB free space for temporary files
-- **OS**: macOS, Linux, Windows (tested on macOS with Apple Silicon)
-
 ## 🛠️ MCP Tools Available
 
-### 1. `single_convert` - Single File Conversion
-
-Convert individual PDF files with advanced options and monitoring.
-
-```python
-arguments = {
-    "file_path": "/path/to/document.pdf",
-    "output_format": "markdown",
-    "page_range": "1-5",
-    "use_llm": True,
-    "debug": False
-}
-```
-
-**Features**:
-- Real-time resource monitoring
-- Security validation
-- Error recovery
-- Progress tracking
-
-### 2. `batch_convert` - Enhanced Batch Processing
-
-Convert multiple PDFs in a folder with full CLI argument support and concurrent processing.
-
-```python
-arguments = {
-    "in_folder": "/path/to/pdfs",
-    "output_dir": "/path/to/outputs", 
-    "max_workers": 3,
-    "output_format": "markdown",
-    "use_llm": True,
-    "skip_existing": True
-}
-```
-
-**Features**:
-- Concurrent processing (configurable workers)
-- Partial failure handling
-- Progress tracking
-- Resource limit enforcement
-
-### 3. `chunk_convert` - Memory-Efficient Folder Processing
-
-Process large collections of PDFs using memory-efficient chunking.
-
-```python
-arguments = {
-    "in_folder": "/path/to/large/collection",
-    "out_folder": "/path/to/output",
-    "chunk_size": 50,
-    "use_llm": True
-}
-```
-
-### 4. `batch_pages_convert` - 🆕 Advanced Chunked Processing
+### 1. `batch_pages_convert` - Advanced Chunked Processing
 
 **NEW FEATURE**: Process large PDFs efficiently by splitting them into page chunks.
 
+- **Memory Efficient**: Processes documents in configurable page chunks (default: 5 pages)
+- **Fault Tolerant**: Individual chunk failures don't stop entire process
+- **Progress Tracking**: Detailed progress information for each chunk
+- **Automatic Stitching**: Combines chunk outputs into single cohesive document
+
 ```python
+# Example usage
 arguments = {
     "file_path": "/path/to/large_document.pdf",
     "pages_per_chunk": 5,
@@ -124,42 +62,53 @@ arguments = {
 }
 ```
 
-**Benefits**:
-- Memory efficient processing
-- Fault tolerant (chunk failures don't stop entire process)
-- Progress tracking for each chunk
-- Automatic output stitching
+### 2. `batch_convert` - Enhanced Batch Processing
 
-### 5. `get_system_health` - 🆕 System Monitoring
-
-Real-time system health assessment and resource monitoring.
+Convert multiple PDFs in a folder with full CLI argument support.
 
 ```python
-# Returns current system status
-{
-    "status": "healthy",
-    "memory_usage_percent": 45.2,
-    "cpu_usage_percent": 23.1,
-    "active_jobs": 1,
-    "queue_size": 0,
-    "alerts": []
+arguments = {
+    "folder_path": "/path/to/pdfs",
+    "output_dir": "/path/to/outputs",
+    "workers": 8,
+    "debug": True,
+    "use_llm": True,
+    "page_range": "0-10",
+    "skip_existing": True
 }
 ```
 
-### 6. `get_metrics_summary` - 🆕 Performance Metrics
+### 3. `single_convert` - Single File Conversion
 
-Get comprehensive performance metrics and operation statistics.
+Convert individual PDF files with advanced options.
 
 ```python
-# Returns detailed metrics
-{
-    "total_operations": 156,
-    "success_rate": 98.7,
-    "average_processing_time": 12.3,
-    "peak_memory_usage": 1024.5,
-    "gpu_utilization": 67.2
+arguments = {
+    "pdf_path": "/path/to/document.pdf",
+    "output_path": "/path/to/output.md",
+    "debug": True,
+    "use_llm": True,
+    "page_range": "0-5"
 }
 ```
+
+### 4. `chunk_convert` - Folder Chunking
+
+Process large collections of PDFs using memory-efficient chunking.
+
+```python
+arguments = {
+    "in_folder": "/path/to/large/collection",
+    "chunk_size": 50,
+    "use_llm": True
+}
+```
+
+### 5. `start_server` - API Server
+
+Start FastAPI server for REST API access.
+
+```python
 arguments = {
     "host": "0.0.0.0",
     "port": 8080
@@ -167,53 +116,6 @@ arguments = {
 ```
 
 ## 🔧 Advanced Configuration
-
-### Resource Limits
-
-Configure system resource limits for safe operation:
-
-```json
-{
-    "resource_limits": {
-        "max_file_size_mb": 500,
-        "max_memory_usage_mb": 4096,
-        "max_processing_time_seconds": 600,
-        "max_concurrent_jobs": 3,
-        "max_queue_size": 10
-    }
-}
-```
-
-### Monitoring Configuration
-
-Enable comprehensive system monitoring:
-
-```json
-{
-    "monitoring": {
-        "enable_metrics": true,
-        "metrics_interval_seconds": 30,
-        "log_performance": true,
-        "alert_memory_threshold_percent": 85.0,
-        "alert_processing_time_threshold_seconds": 300
-    }
-}
-```
-
-### Security Configuration
-
-Configure security validation and access controls:
-
-```json
-{
-    "security": {
-        "validate_file_paths": true,
-        "allowed_file_extensions": [".pdf"],
-        "allowed_input_dirs": ["/safe/input"],
-        "allowed_output_dirs": ["/safe/output"]
-    }
-}
-```
 
 ### LLM Integration
 
@@ -268,7 +170,9 @@ Enable comprehensive debugging:
 }
 ```
 
-## 📁 Configuration Examples
+## 📁 Configuration Files
+
+Use JSON configuration files for complex setups:
 
 ### Basic Configuration
 ```json
@@ -296,115 +200,36 @@ Enable comprehensive debugging:
 ### High-Performance Configuration
 ```json
 {
-  "workers": 3,
+  "workers": 8,
   "max_tasks_per_worker": 20,
   "disable_multiprocessing": false,
   "pdftext_workers": 4,
-  "chunk_size": 100,
-  "resource_limits": {
-    "max_memory_usage_mb": 8192
-  }
+  "chunk_size": 100
 }
 ```
 
-### Production Configuration
-```json
-{
-  "resource_limits": {
-    "max_file_size_mb": 1000,
-    "max_memory_usage_mb": 8192,
-    "max_processing_time_seconds": 1200,
-    "max_concurrent_jobs": 5
-  },
-  "monitoring": {
-    "enable_metrics": true,
-    "log_performance": true,
-    "alert_memory_threshold_percent": 80.0
-  },
-  "security": {
-    "validate_file_paths": true,
-    "allowed_input_dirs": ["/app/input"],
-    "allowed_output_dirs": ["/app/output"]
-  }
-}
-```
+## 📊 Performance Metrics
 
-## 📊 Monitoring & Performance
+### System Health Monitoring
 
-### Real-Time System Health
-
-Monitor system performance and resource usage in real-time:
-
-```python
-# Get current system health
-health = await client.call_tool("get_system_health")
-# Returns:
-{
-    "status": "healthy",           # Overall system status
-    "memory_usage_percent": 45.2,  # Current memory usage
-    "cpu_usage_percent": 23.1,     # Current CPU usage
-    "gpu_usage_percent": 67.2,     # GPU utilization (if available)
-    "active_jobs": 1,              # Currently running operations
-    "queue_size": 0,               # Pending operations
-    "alerts": [],                  # Active system alerts
-    "uptime_seconds": 3600         # Server uptime
-}
-```
-
-### Performance Metrics
-
-Track operation performance and success rates:
-
-```python
-# Get comprehensive metrics
-metrics = await client.call_tool("get_metrics_summary")
-# Returns:
-{
-    "total_operations": 156,
-    "success_rate": 98.7,
-    "average_processing_time": 12.3,
-    "peak_memory_usage": 1024.5,
-    "total_pages_processed": 2340,
-    "errors_by_type": {
-        "memory_limit": 1,
-        "timeout": 1,
-        "file_not_found": 0
-    }
-}
-```
-
-### Resource Monitoring Features
-
-- **Memory Usage Tracking**: Real-time memory consumption with alerts
+- **Memory Usage**: Real-time tracking with configurable alerts (85% threshold)
 - **CPU Utilization**: Multi-core usage monitoring
-- **GPU Monitoring**: Apple Silicon MPS device tracking
-- **Processing Time Analysis**: Per-operation timing with thresholds
-- **Operation Lifecycle**: Start, progress, completion tracking
-- **Error Rate Analysis**: Failure categorization and trending
+- **GPU Usage**: Apple Silicon MPS device monitoring
+- **Processing Times**: Per-operation timing with alert thresholds (300s)
 
-### Alert System
+### Operation Tracking
 
-Configurable alerts for resource thresholds:
-- Memory usage > 85% (configurable)
-- Processing time > 300 seconds (configurable)
-- Queue size approaching limits
-- Error rate spikes
-
-### Performance Characteristics
-
-- **Throughput**: ~2-5 pages/second (device dependent)
-- **Concurrent Jobs**: 3 by default (configurable)
-- **Memory Efficiency**: Streaming processing for large files
-- **Apple Silicon**: Optimized for M1/M2 processors
+- **Job Lifecycle**: Start, progress, completion, and error states
+- **Resource Consumption**: Memory, CPU, and GPU usage per operation
+- **Throughput**: Pages per second and batch processing metrics
+- **Error Rates**: Failure tracking and categorization
 
 ## 🛡️ Security Features
 
 ### File System Protection
 
-Comprehensive security validation and access controls:
-
 - **Path Traversal Prevention**: Blocks `../` and absolute path attacks
-- **Directory Restriction**: Enforces allowed input/output directories  
+- **Directory Restriction**: Enforces allowed input/output directories
 - **Extension Validation**: Restricts to approved file types (`.pdf`)
 - **Filename Sanitization**: Prevents malicious filename patterns
 
@@ -413,348 +238,366 @@ Comprehensive security validation and access controls:
 - **Parameter Sanitization**: Type checking and range validation
 - **Configuration Validation**: Schema-based security settings
 - **Access Logging**: Detailed security event tracking
-- **Size Limits**: Configurable file and memory limits
 
-### Security Event Logging
+## 🧪 Testing Coverage
 
-All security events are logged with details:
-- File access attempts outside allowed directories
-- Invalid file extension attempts
-- Path traversal attack attempts
-- Resource limit violations
+### Test Infrastructure
 
-### Example Security Configuration
+- **Fixtures**: Configuration, temporary workspace, mock collectors
+- **Test Data Generation**: Synthetic performance data and test scenarios
+- **Environment Setup**: Isolated test environments with cleanup
+
+### Test Categories
+
+- **Unit Tests**: Component-level testing with mocking
+- **Integration Tests**: End-to-end workflow validation
+- **Security Tests**: Attack scenario prevention
+- **Performance Tests**: Load testing and benchmarking capabilities
+
+## 🚀 Usage Examples
+
+### Basic MCP Client Usage
+
+```python
+# Convert PDF with monitoring
+result = await mcp_client.call_tool("convert_single_pdf", {
+    "file_path": "/safe/path/document.pdf",
+    "output_format": "markdown"
+})
+
+# Check system health
+health = await mcp_client.call_tool("get_system_health", {})
+
+# Get performance metrics
+metrics = await mcp_client.call_tool("get_metrics_summary", {})
+```
+
+### Configuration
 
 ```json
 {
+    "resource_limits": {
+        "max_file_size_mb": 500,
+        "max_memory_usage_mb": 4096,
+        "max_processing_time_seconds": 600,
+        "max_concurrent_jobs": 3
+    },
+    "monitoring": {
+        "enable_metrics": true,
+        "metrics_interval_seconds": 30,
+        "alert_memory_threshold_percent": 85.0
+    },
     "security": {
         "validate_file_paths": true,
-        "allowed_file_extensions": [".pdf"],
-        "allowed_input_dirs": [
-            "/safe/input",
-            "/approved/documents"
-        ],
-        "allowed_output_dirs": [
-            "/safe/output",
-            "/processed/results"
-        ]
+        "allowed_input_dirs": ["/safe/input"],
+        "allowed_output_dirs": ["/safe/output"]
     }
 }
 ```
 
-## 🧪 Testing Suite
+## 📈 Performance Characteristics
 
-### Comprehensive Test Coverage
+### Throughput
+- **Single PDF**: ~2-5 pages/second (device dependent)
+- **Batch Processing**: 3 concurrent jobs by default
+- **Memory Efficient**: Streaming processing for large files
 
-The system includes 65+ comprehensive test cases covering:
+### Resource Usage
+- **Memory**: Configurable limits with real-time monitoring
+- **CPU**: Multi-core utilization with Apple Silicon optimization
+- **GPU**: MPS acceleration on compatible devices
+- **Storage**: Efficient caching and cleanup
 
-- **Unit Tests**: Component-level testing with mocking
-- **Integration Tests**: End-to-end workflow validation  
-- **Security Tests**: Attack scenario prevention
-- **Performance Tests**: Load testing and benchmarking
-- **Error Handling Tests**: Edge cases and failure scenarios
+## 🔄 Development Workflow
 
-### Test Categories
+### Running Tests
 
 ```bash
 # Run all tests
 python -m pytest tests/ -v
 
-# Run specific test categories  
-python -m pytest tests/test_monitoring.py -v      # 23 monitoring tests
-python -m pytest tests/test_security.py -v       # 24 security tests
-python -m pytest tests/test_error_handling.py -v # 18 error handling tests
-python -m pytest tests/test_pdf_conversion.py -v # 20 real functionality tests
-python -m pytest tests/test_tools.py -v          # 23 tool integration tests
-python -m pytest tests/test_config.py -v         # Configuration tests
+# Run specific test categories
+python -m pytest tests/ -m "unit"
+python -m pytest tests/ -m "security"
+python -m pytest tests/ -m "performance"
 
 # Run with coverage
 python -m pytest tests/ --cov=src/marker_mcp_server
 ```
 
-### Test Results (Latest)
+### Development Server
 
-✅ **All Tests Passing**: 100% success rate across all test suites  
-✅ **Real Functionality**: Tests use actual PDF conversion without extensive mocking  
-✅ **Comprehensive Coverage**: Monitoring, security, error handling, performance  
-✅ **Integration Validated**: End-to-end workflows tested
+```bash
+# Start development server
+python -m src.marker_mcp_server.server --debug
 
-### Testing Philosophy
-
-- **Real-World Testing**: Minimal mocking, actual functionality validation
-- **Comprehensive Coverage**: All major features and edge cases
-- **Performance Validation**: Resource usage and timing verification
-- **Security Hardening**: Attack scenario prevention testing
-
-## 📚 API Documentation
-
-### MCP Client Usage
-
-```python
-# Example MCP client usage
-import asyncio
-from mcp.client import MCPClient
-
-async def main():
-    client = MCPClient()
-    
-    # Convert single PDF
-    result = await client.call_tool("single_convert", {
-        "file_path": "/path/to/document.pdf",
-        "output_format": "markdown",
-        "use_llm": True
-    })
-    
-    # Check system health
-    health = await client.call_tool("get_system_health")
-    print(f"System status: {health['status']}")
-    
-    # Get performance metrics
-    metrics = await client.call_tool("get_metrics_summary")
-    print(f"Success rate: {metrics['success_rate']}%")
-
-asyncio.run(main())
+# With custom configuration
+python -m src.marker_mcp_server.server --config-path /path/to/config.json
 ```
 
-### REST API (Optional)
+## 📖 Documentation
 
-When the server is started with FastAPI mode, it automatically exposes:
-- **Swagger UI**: Available at `/docs` for interactive API testing
-- **ReDoc**: Available at `/redoc` for comprehensive documentation
-- **OpenAPI Schema**: Available at `/openapi.json`
+### Detailed Documentation
 
-### Available Endpoints
+For more detailed documentation on:
+- Configuration options
+- Advanced usage
+- API endpoints
+- Development guidelines
 
-- `POST /convert/single` - Single file conversion
-- `POST /convert/batch` - Batch processing
-- `POST /convert/chunk` - Chunked processing
-- `GET /health` - System health check
-- `GET /metrics` - Performance metrics
+Please refer to the project's documentation in the `docs/` directory.
 
 ## 🤝 Contributing
 
-We welcome contributions! Here's how to get started:
+1. **Fork the repository** and create your branch from `main`.
+2. **Write tests** for your changes (see `tests/` directory).
+3. **Document** new features or changes in the README or relevant doc files.
+4. **Open a Pull Request** with a clear description of your changes.
 
-### How to Contribute
+## 📄 License
 
-1. **Fork the repository** and create your branch from `main`
-2. **Write tests** for your changes (see `tests/` directory)
-3. **Document** new features or changes in the README
-4. **Open a Pull Request** with a clear description of your changes
+This project is licensed under the terms of the [Marker Contributor Agreement](CLA.md).
 
-### Development Guidelines
+## 🙏 Acknowledgments
 
-- **Follow PEP8** and use type hints where possible
-- **Write docstrings** for all public functions and classes
-- **Add tests** for new functionality (aim for high coverage)
-- **Update documentation** for user-facing changes
+Special thanks to all contributors who have helped make this project possible.
 
-### Adding New Features
+## 📬 Support
 
-#### New Processors
-Add processors in `marker/processors/` and register them:
-```python
-from marker.processors import register_processor
+For support, please open an issue in the GitHub repository or contact the maintainers directly.
 
-@register_processor('my_processor')
-class MyProcessor:
-    def process(self, document):
-        return processed_document
-```
+## 🚀 Quick Start
 
-#### New MCP Tools
-Add tools in `src/marker_mcp_server/tools.py` and register in `server.py`:
-```python
-@mcp.tool("my_tool")
-async def handle_my_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
-    # Implementation with monitoring
-    async with metrics_collector.track_operation("my_operation"):
-        return result
-```
-
-### Testing Your Changes
+### Installation
 
 ```bash
-# Run all tests
-python -m pytest tests/ -v
+# Install dependencies
+pip install .
 
-# Run specific test files
-python -m pytest tests/test_new_feature.py -v
-
-# Check test coverage
-python -m pytest tests/ --cov=src/marker_mcp_server
-
-# Run integration tests
-python -m pytest tests/test_pdf_conversion.py -v
+# Or using poetry
+poetry install
 ```
 
-### Code Review Process
+### Basic Usage
 
-- All submissions require review
-- Tests must pass on all supported Python versions
-- Documentation must be updated for user-facing changes
-- Performance impact should be considered for core changes
+```bash
+# Start the MCP server
+python -m marker_mcp_server
 
-## 🔍 Troubleshooting
+# Show help and available options
+python -m src.marker_mcp_server.server --help
 
-### Common Issues
+# Show version information
+python -m src.marker_mcp_server.server --version
 
-#### High Memory Usage
-**Symptom**: System running out of memory during processing
-**Solution**: 
-- Reduce `max_concurrent_jobs` in configuration
-- Lower `max_memory_usage_mb` limit
-- Use chunked processing for large files
-- Check system health with `get_system_health` tool
+# Enable debug logging
+python -m src.marker_mcp_server.server --debug
+```
 
-#### Processing Timeouts
-**Symptom**: Operations timing out before completion
-**Solution**:
-- Increase `max_processing_time_seconds` limit
-- Use chunked processing for large documents
-- Check system resources and reduce concurrent operations
-- Enable debug mode to identify bottlenecks
+## 🛠️ MCP Tools Available
 
-#### File Size Errors
-**Symptom**: "File too large" errors
-**Solution**:
-- Increase `max_file_size_mb` limit
-- Use chunked processing for very large PDFs
-- Check available disk space
-- Consider splitting large PDFs before processing
+### 1. `batch_pages_convert` - 🆕 Advanced Chunked Processing
 
-#### Path Validation Failures
-**Symptom**: "Path not allowed" security errors
-**Solution**:
-- Configure `allowed_input_dirs` and `allowed_output_dirs`
-- Use absolute paths
-- Check file permissions
-- Verify paths don't contain traversal patterns (`../`)
+**NEW FEATURE**: Process large PDFs efficiently by splitting them into page chunks.
 
-#### LLM Integration Issues
-**Symptom**: LLM service connection failures
-**Solution**:
-- Verify API credentials are configured
-- Check network connectivity
-- Validate `llm_service` configuration
-- Review service-specific documentation
+- **Memory Efficient**: Processes documents in configurable page chunks (default: 5 pages)
+- **Fault Tolerant**: Individual chunk failures don't stop entire process
+- **Progress Tracking**: Detailed progress information for each chunk
+- **Automatic Stitching**: Combines chunk outputs into single cohesive document
+
+```python
+# Example usage
+arguments = {
+    "file_path": "/path/to/large_document.pdf",
+    "pages_per_chunk": 5,
+    "combine_output": True,
+    "use_llm": True,
+    "output_format": "markdown"
+}
+```
+
+### 2. `batch_convert` - Enhanced Batch Processing
+
+Convert multiple PDFs in a folder with full CLI argument support.
+
+```python
+arguments = {
+    "folder_path": "/path/to/pdfs",
+    "output_dir": "/path/to/outputs",
+    "workers": 8,
+    "debug": True,
+    "use_llm": True,
+    "page_range": "0-10",
+    "skip_existing": True
+}
+```
+
+### 3. `single_convert` - Single File Conversion
+
+Convert individual PDF files with advanced options.
+
+```python
+arguments = {
+    "pdf_path": "/path/to/document.pdf",
+    "output_path": "/path/to/output.md",
+    "debug": True,
+    "use_llm": True,
+    "page_range": "0-5"
+}
+```
+
+### 4. `chunk_convert` - Folder Chunking
+
+Process large collections of PDFs using memory-efficient chunking.
+
+```python
+arguments = {
+    "in_folder": "/path/to/large/collection",
+    "chunk_size": 50,
+    "use_llm": True
+}
+```
+
+### 5. `start_server` - API Server
+
+Start FastAPI server for REST API access.
+
+```python
+arguments = {
+    "host": "0.0.0.0",
+    "port": 8080
+}
+```
+
+## 🔧 Advanced Configuration
+
+### LLM Integration
+
+Enable high-quality processing with Large Language Models:
+
+```python
+# Basic LLM usage
+{
+    "use_llm": True,
+    "llm_service": "groq"  # Automatically normalized to full path
+}
+
+# Advanced LLM configuration
+{
+    "use_llm": True,
+    "llm_service": "marker.services.groq.GroqService",
+    "config_json": "examples/llm_enhanced_config.json"
+}
+```
+
+### Page Range Selection
+
+Process specific page ranges efficiently:
+
+```python
+{
+    "page_range": "0-5",      # Pages 0 through 5
+    "page_range": "0,3,5-10", # Pages 0, 3, and 5 through 10
+    "page_range": "10-"       # Page 10 to end
+}
+```
+
+### Output Formats
+
+Choose from multiple output formats:
+
+```python
+{
+    "output_format": "markdown",  # Default, clean markdown
+    "output_format": "json",      # Structured JSON with metadata
+    "output_format": "html"       # Styled HTML output
+}
+```
 
 ### Debug Mode
 
 Enable comprehensive debugging:
 
-```bash
-# Start server with debug logging
-python -m src.marker_mcp_server.server --debug
-
-# Or configure in JSON
+```python
 {
-    "debug": true,
-    "monitoring": {
-        "log_performance": true
-    }
+    "debug": True  # Saves debug images, processing data, and detailed logs
 }
 ```
 
-Debug mode provides:
-- Detailed operation logging
-- Resource usage tracking
-- Intermediate file preservation
-- Extended error information
+## 📁 Configuration Files
 
-### Health Checks
+Use JSON configuration files for complex setups:
 
-Monitor system health:
+### Basic Configuration
+```json
+{
+  "use_llm": false,
+  "output_format": "markdown",
+  "debug": false,
+  "extract_images": true,
+  "pdftext_workers": 2
+}
+```
+
+### LLM-Enhanced Configuration
+```json
+{
+  "use_llm": true,
+  "llm_service": "marker.services.groq.GroqService",
+  "output_format": "markdown",
+  "debug": false,
+  "extract_images": true,
+  "format_lines": true
+}
+```
+
+### High-Performance Configuration
+```json
+{
+  "workers": 8,
+  "max_tasks_per_worker": 20,
+  "disable_multiprocessing": false,
+  "pdftext_workers": 4,
+  "chunk_size": 100
+}
+```
+
+## 📚 API Documentation
+
+- When the server is started with `start_server`, FastAPI automatically exposes OpenAPI/Swagger documentation at `/docs` (Swagger UI) and `/redoc` (ReDoc UI).
+- You can interactively test the API and see all endpoints and schemas there.
+
+## 🧩 Extending Processors and Converters
+
+- To add a new processor, use the plugin registry in `marker/processors/registry.py`:
 
 ```python
-# Check system status
-health = await client.call_tool("get_system_health")
+from marker.processors import register_processor
 
-# Analyze performance metrics
-metrics = await client.call_tool("get_metrics_summary")
+@register_processor('my_custom_processor')
+class MyCustomProcessor:
+    ...
 ```
 
-### Log Analysis
+- To add a new converter, use the plugin registry in `marker/converters/registry.py`:
 
-Key log locations:
-- **Application logs**: Check console output or log files
-- **Security events**: Security validation failures and attempts
-- **Performance metrics**: Resource usage and timing information
-- **Error details**: Stack traces and diagnostic information
+```python
+from marker.converters import register_converter
 
-## 📄 License & Legal
-
-### License
-
-This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
-
-### Contributor License Agreement
-
-Contributors must agree to the Marker Contributor Agreement (MCA). See [CLA.md](CLA.md) for details.
-
-**Key points:**
-- Joint ownership of contributions with Endless Labs, Inc.
-- Permission to sublicense contributions
-- Patent grants for contributed technology
-- Compliance with export control laws
-
-### Third-Party Dependencies
-
-This project uses various open-source libraries. See `pyproject.toml` and `requirements-dev.txt` for complete dependency lists.
-
-**Key dependencies:**
-- **Marker PDF**: Core PDF processing capabilities
-- **FastAPI**: REST API server (optional)
-- **pdftext**: PDF text extraction
-- **WeasyPrint**: HTML to PDF rendering
-- **pytest**: Testing framework
-
-### Copyright Notice
-
-```
-Copyright (c) 2025 Endless Labs, Inc.
-Licensed under the Marker Contributor Agreement
+@register_converter('my_custom_converter')
+class MyCustomConverter:
+    ...
 ```
 
-## 📞 Support
+- See `marker/processors/__init__.py` and `marker/converters/__init__.py` for more details.
 
-### Getting Help
+## ⚡ Performance & Scalability
 
-- **GitHub Issues**: For bug reports and feature requests
-- **Documentation**: See this README and example configurations
-- **Testing**: Run integration tests to validate setup
-- **Debugging**: Enable debug mode for detailed diagnostics
+- Batch and chunked processing are supported for large-scale PDF conversion.
+- For very large jobs or distributed processing, consider integrating an async task queue (e.g., Celery, RQ). This is not included by default, but the architecture supports async handlers.
+- Monitor resource usage (CPU, memory) for large jobs. Logging includes memory usage if `psutil` is installed.
+- You can adjust worker counts and chunk sizes in the configuration for optimal performance.
 
-### Reporting Issues
+## 🤝 Contributing
 
-When reporting issues, please include:
-- **System information**: OS, Python version, hardware specs
-- **Configuration**: Relevant configuration files (remove sensitive data)
-- **Error messages**: Complete error logs and stack traces
-- **Reproduction steps**: Minimal example to reproduce the issue
-- **Expected behavior**: What should happen vs what actually happens
-
-### Feature Requests
-
-Feature requests should include:
-- **Use case**: Clear description of the problem being solved
-- **Proposed solution**: How the feature should work
-- **Alternatives considered**: Other approaches that were evaluated
-- **Impact**: Who would benefit and how
-
----
-
-## 🎯 Project Status
-
-**✅ Production Ready**: All major features implemented and tested  
-**✅ Comprehensive Testing**: 65+ test cases with 100% pass rate  
-**✅ Security Hardened**: File system protection and input validation  
-**✅ Performance Monitored**: Real-time resource tracking and alerts  
-**✅ MCP Compliant**: Full Model Context Protocol implementation  
-**✅ Well Documented**: Complete API and configuration documentation  
-
-The Marker MCP Server provides a robust, secure, and scalable solution for PDF to Markdown conversion with comprehensive monitoring and testing capabilities.
-
----
-
-*Last updated: June 7, 2025*
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on contributing, adding new processors/converters, and running tests.

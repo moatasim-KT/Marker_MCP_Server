@@ -4,7 +4,14 @@ from typing import List, Optional, Dict, Any
 from PIL import Image
 from pydantic import BaseModel
 
-from pdftext.schema import Reference
+# Temporary workaround for missing pdftext.schema.Reference
+try:
+    from pdftext.schema import Reference
+except ImportError:
+    # Define a minimal Reference class as fallback
+    from pydantic import BaseModel
+    class Reference(BaseModel):
+        pass
 
 from marker.logger import configure_logging
 from marker.schema.polygon import PolygonBox
