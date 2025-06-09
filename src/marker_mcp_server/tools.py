@@ -2,8 +2,22 @@
 import asyncio  # noqa: D100, RUF100
 import logging  # Ensure logging is imported
 import os
+import sys
 import traceback  # Ensure traceback is imported
 from typing import Any
+
+# Add the project root directory to Python path to find local marker module
+# This ensures the marker module can be found regardless of working directory
+project_root = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Also add current working directory as fallback
+cwd = os.getcwd()
+if cwd not in sys.path:
+    sys.path.insert(0, cwd)
 
 import pypdfium2  # Added import for pypdfium2, used in handle_batch_pages_convert
 
@@ -22,6 +36,7 @@ LLM_SERVICE_MAPPINGS = {
     "openai": "marker.services.openai.OpenAIService",
     "anthropic": "marker.services.anthropic.AnthropicService",
     "gemini": "marker.services.gemini.GeminiService",
+    "nvidia": "marker.services.nvidia.NvidiaService",
 }
 
 PROCESSOR_NAME_TO_FULL_PATH = {
@@ -377,8 +392,25 @@ async def handle_single_convert(arguments: dict[str, Any]) -> dict:
         log_gpu_memory("after_conversion")
 
         # Prepare output directory and filename
-        out_folder = config_parser.get_output_folder(file_path)
-        fname_base = config_parser.get_base_filename(file_path)
+        # Check if a specific output_path was provided (for chunked processing)
+        output_path = arguments.get("output_path")
+        if output_path:
+            # Use the specific output path provided
+            out_folder = os.path.dirname(output_path)
+            # Remove the extension from the output path since save_output will add its own
+            fname_base = os.path.splitext(os.path.basename(output_path))[0]
+            # Ensure the output directory exists
+            os.makedirs(out_folder, exist_ok=True)
+            logger.info(
+                f"Using custom output path: {output_path} -> folder: {out_folder}, base: {fname_base}"
+            )
+        else:
+            # Use the default ConfigParser behavior
+            out_folder = config_parser.get_output_folder(file_path)
+            fname_base = config_parser.get_base_filename(file_path)
+            logger.info(
+                f"Using default ConfigParser output: folder: {out_folder}, base: {fname_base}"
+            )
 
         # Update progress to show saving stage
         if metrics_collector:
@@ -393,11 +425,18 @@ async def handle_single_convert(arguments: dict[str, Any]) -> dict:
         # Save output
         save_output(rendered, out_folder, fname_base)
 
-        logger.info(f"Saved markdown to {out_folder}")
+        # Determine the actual output file path by checking what save_output created
+        # Import the text_from_rendered function to get the correct extension
+        from marker.output import text_from_rendered
+
+        _, ext, _ = text_from_rendered(rendered)
+        actual_output_file = os.path.join(out_folder, f"{fname_base}.{ext}")
+
+        logger.info(f"Saved output to {actual_output_file}")
         result = {
             "success": True,
             "input_file": file_path,
-            "output_file": os.path.join(out_folder, fname_base + ".md"),
+            "output_file": actual_output_file,
             "message": "Single conversion completed successfully",
         }
         logger.info(f"Returning result: {result}")
@@ -723,6 +762,10 @@ async def handle_batch_pages_convert(arguments: dict[str, Any]) -> dict:
             chunk_filename = f"{base_filename}_chunk_{chunk_num}.{ext}"
             chunk_output_file = os.path.join(output_dir, chunk_filename)
 
+            logger.info(
+                f"Creating chunk {chunk_num} with output file: {chunk_output_file}"
+            )
+
             # Prepare arguments for single convert
             chunk_args = {
                 "file_path": file_path,
@@ -776,6 +819,11 @@ async def handle_batch_pages_convert(arguments: dict[str, Any]) -> dict:
 
             if actual_output_file and os.path.exists(actual_output_file):
                 chunk_files.append(actual_output_file)
+                logger.info(f"Successfully created chunk file: {actual_output_file}")
+            else:
+                logger.warning(
+                    f"Chunk file not found or not created: {actual_output_file}"
+                )
 
         # Combine outputs if requested
         combined_output_file = None

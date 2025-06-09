@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "marker_mcp_server": {
+      "command": "python",
+      "args": ["-m", "src.marker_mcp_server"],
+      "cwd": "/Users/moatasimfarooque/Downloads/Data_Science/servers/marker",
+      "env": {
+        "PYTHONPATH": "/Users/moatasimfarooque/Downloads/Data_Science/servers/marker"
+      }
+    }
+  }
+}

@@ -11,6 +11,7 @@ from marker.converters.enhanced_pdf import EnhancedPdfConfig, EnhancedPdfConvert
 from marker.schema import BlockTypes
 from marker.services.claude import ClaudeService
 from marker.services.gemini import GoogleGeminiService
+from marker.services.nvidia import NvidiaService
 from marker.services.openai import OpenAIService
 
 
@@ -28,7 +29,7 @@ def convert_pdf_with_enhancements(
         pdf_path: Path to the PDF file
         output_path: Output path for the converted file (optional)
         use_llm: Whether to use LLM-based enhancements
-        llm_service: Which LLM service to use ("openai", "claude", "gemini")
+        llm_service: Which LLM service to use ("openai", "claude", "gemini", "nvidia")
         config_overrides: Dictionary of configuration overrides
 
     Returns:
@@ -55,6 +56,8 @@ def convert_pdf_with_enhancements(
             converter.llm_service = ClaudeService(config)
         elif llm_service == "gemini":
             converter.llm_service = GoogleGeminiService(config)
+        elif llm_service == "nvidia":
+            converter.llm_service = NvidiaService(config)
         else:
             print(f"Warning: Unknown LLM service '{llm_service}', using Gemini")
             converter.llm_service = GoogleGeminiService(config)
@@ -194,7 +197,7 @@ def main():
     )
     parser.add_argument(
         "--llm-service",
-        choices=["openai", "claude", "gemini"],
+        choices=["openai", "claude", "gemini", "nvidia"],
         default="gemini",
         help="LLM service to use",
     )

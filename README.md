@@ -242,11 +242,25 @@ arguments = {
 
 Enable high-quality processing with Large Language Models:
 
+#### Available LLM Services
+
+- **groq**: Groq's fast inference API
+- **openai**: OpenAI GPT models (including compatible APIs)
+- **anthropic**: Anthropic Claude models
+- **gemini**: Google Gemini models
+- **nvidia**: NVIDIA's Llama-3.1-Nemotron-Nano-VL-8B-V1 model
+
 ```python
 # Basic LLM usage
 {
     "use_llm": True,
     "llm_service": "groq"  # Automatically normalized to full path
+}
+
+# NVIDIA model usage
+{
+    "use_llm": True,
+    "llm_service": "nvidia"  # Uses NVIDIA's vision-language model
 }
 
 # Advanced LLM configuration
@@ -731,11 +745,25 @@ arguments = {
 
 Enable high-quality processing with Large Language Models:
 
+#### Available LLM Services
+
+- **groq**: Groq's fast inference API
+- **openai**: OpenAI GPT models (including compatible APIs)
+- **anthropic**: Anthropic Claude models
+- **gemini**: Google Gemini models
+- **nvidia**: NVIDIA's Llama-3.1-Nemotron-Nano-VL-8B-V1 model
+
 ```python
 # Basic LLM usage
 {
     "use_llm": True,
     "llm_service": "groq"  # Automatically normalized to full path
+}
+
+# NVIDIA model usage
+{
+    "use_llm": True,
+    "llm_service": "nvidia"  # Uses NVIDIA's vision-language model
 }
 
 # Advanced LLM configuration

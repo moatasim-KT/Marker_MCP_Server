@@ -1,0 +1,14 @@
+{
+  "use_llm": true,
+  "llm_service": "marker.services.nvidia.NvidiaService",
+  "output_format": "markdown",
+  "debug": false,
+  "extract_images": true,
+  "format_lines": true,
+  "nvidia_api_key": "$NVIDIA_API_KEY",
+  "nvidia_base_url": "https://integrate.api.nvidia.com/v1",
+  "nvidia_model": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+  "timeout": 60,
+  "max_retries": 3,
+  "retry_wait_time": 5
+}
