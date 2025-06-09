@@ -1,7 +1,6 @@
 from typing import Annotated, List, Optional
 
-from surya.layout import LayoutPredictor
-from surya.layout.schema import LayoutResult, LayoutBox
+from surya.layout import LayoutBox, LayoutPredictor, LayoutResult
 
 from marker.builders import BaseBuilder
 from marker.providers.pdf import PdfProvider

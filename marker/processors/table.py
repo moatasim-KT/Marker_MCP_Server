@@ -1,16 +1,16 @@
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from copy import deepcopy
 from typing import Annotated, List
-from collections import Counter
 
 from ftfy import fix_text
 from surya.detection import DetectionPredictor
-from surya.recognition import RecognitionPredictor, OCRResult
+from surya.recognition import OCRResult, RecognitionPredictor
 from surya.table_rec import TableRecPredictor
-from surya.table_rec.schema import TableResult, TableCell as SuryaTableCell
-from pdftext.extraction import table_output
+from surya.table_rec.schema import TableCell as SuryaTableCell
+from surya.table_rec.schema import TableResult
 
+from marker.logger import get_logger
 from marker.processors import BaseProcessor
 from marker.schema import BlockTypes
 from marker.schema.blocks.tablecell import TableCell
@@ -18,9 +18,91 @@ from marker.schema.document import Document
 from marker.schema.polygon import PolygonBox
 from marker.settings import settings
 from marker.util import matrix_intersection_area
-from marker.logger import get_logger
 
 logger = get_logger()
+
+
+def table_output(filepath, table_inputs, page_range=None, workers=None):
+    """
+    Custom table_output function to replace the missing pdftext.extraction.table_output.
+
+    This function extracts text from specific table regions in a PDF using pdftext.
+
+    Args:
+        filepath: Path to the PDF file
+        table_inputs: List of dicts with 'tables' (list of bboxes) and 'img_size' for each page
+        page_range: List of page numbers to process
+        workers: Number of worker processes (passed to pdftext)
+
+    Returns:
+        List of lists: For each page, a list of table cell texts
+    """
+    try:
+        # Import here to avoid issues if not available
+        from pdftext.extraction import dictionary_output
+
+        # Get full document text with character-level information
+        doc_dict = dictionary_output(
+            filepath, page_range=page_range, keep_chars=True, workers=workers
+        )
+
+        result = []
+
+        for page_idx, page_num in enumerate(page_range or []):
+            page_tables = []
+
+            if page_idx < len(table_inputs):
+                table_input = table_inputs[page_idx]
+                tables = table_input.get("tables", [])
+
+                # Get page data
+                page_data = None
+                for page in doc_dict.get("pages", []):
+                    if page.get("page", 0) == page_num:
+                        page_data = page
+                        break
+
+                if page_data:
+                    for table_bbox in tables:
+                        # Extract text from this table region
+                        table_text = extract_text_from_bbox(page_data, table_bbox)
+                        page_tables.append(table_text)
+                else:
+                    # No page data found, return empty tables
+                    page_tables = [[] for _ in tables]
+
+            result.append(page_tables)
+
+        return result
+
+    except Exception as e:
+        # If extraction fails, return empty results to trigger OCR fallback
+        print(f"Warning: table_output failed: {e}")
+        return [[] for _ in (page_range or [])]
+
+
+def extract_text_from_bbox(page_data, table_bbox):
+    """Extract text from a specific bounding box region of a page."""
+    x1, y1, x2, y2 = table_bbox
+    table_texts = []
+
+    # Extract text blocks that fall within the table bbox
+    for block in page_data.get("blocks", []):
+        block_bbox = block.get("bbox", [0, 0, 0, 0])
+        block_x1, block_y1, block_x2, block_y2 = block_bbox
+
+        # Check if block overlaps with table region
+        if block_x1 < x2 and block_x2 > x1 and block_y1 < y2 and block_y2 > y1:
+            # Extract text from lines within this block
+            for line in block.get("lines", []):
+                line_text = ""
+                for span in line.get("spans", []):
+                    line_text += span.get("text", "")
+
+                if line_text.strip():
+                    table_texts.append({"text": line_text.strip()})
+
+    return table_texts
 
 
 class TableProcessor(BaseProcessor):
@@ -438,6 +520,7 @@ class TableProcessor(BaseProcessor):
                     img_size = block["img_size"]
 
             table_inputs.append({"tables": tables, "img_size": img_size})
+        # Use our custom table_output function
         cell_text = table_output(
             filepath,
             table_inputs,

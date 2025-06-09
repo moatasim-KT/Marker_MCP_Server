@@ -1,19 +1,19 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Annotated
 
-from marker.logger import get_logger
+from pydantic import BaseModel
 from surya.layout import LayoutPredictor
 from tqdm import tqdm
-from pydantic import BaseModel
 
 from marker.builders.layout import LayoutBuilder
-from marker.services import BaseService
+from marker.logger import get_logger
 from marker.providers.pdf import PdfProvider
 from marker.schema import BlockTypes
 from marker.schema.blocks import Block
 from marker.schema.document import Document
 from marker.schema.groups.page import PageGroup
 from marker.schema.registry import get_block_class
+from marker.services import BaseService
 from marker.settings import settings
 
 logger = get_logger()

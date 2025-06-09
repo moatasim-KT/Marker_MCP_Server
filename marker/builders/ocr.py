@@ -1,10 +1,10 @@
 import copy
-from typing import Annotated, List, Optional, Any, cast, Type
+from typing import Annotated, Any, List, Optional, Type, cast
 
 from ftfy import fix_text
 from PIL import Image
 from surya.common.surya.schema import TaskNames
-from surya.recognition import RecognitionPredictor, OCRResult, TextChar
+from surya.recognition import OCRResult, RecognitionPredictor, TextChar
 
 from marker.builders import BaseBuilder
 from marker.providers.pdf import PdfProvider
@@ -12,13 +12,13 @@ from marker.schema import BlockTypes
 from marker.schema.blocks import BlockId
 from marker.schema.document import Document
 from marker.schema.groups import PageGroup
+from marker.schema.polygon import PolygonBox
 from marker.schema.registry import get_block_class
 from marker.schema.text.char import Char
 from marker.schema.text.line import Line
 from marker.schema.text.span import Span
 from marker.settings import settings
-from marker.schema.polygon import PolygonBox
-from marker.util import get_opening_tag_type, get_closing_tag_type
+from marker.util import get_closing_tag_type, get_opening_tag_type
 
 
 class OcrBuilder(BaseBuilder):
@@ -91,7 +91,7 @@ class OcrBuilder(BaseBuilder):
             if page_bbox is None:
                 continue
             page_size = page_bbox.size
-            
+
             if page_highres_image is None:
                 continue
             # Ensure we have a PIL Image object before accessing size
@@ -102,9 +102,9 @@ class OcrBuilder(BaseBuilder):
             for block in document_page.contained_blocks(document):
                 if block.block_type in self.skip_ocr_blocks:
                     continue
-                block_lines = cast(List[Line], block.contained_blocks(
-                    document, [BlockTypes.Line]
-                ))
+                block_lines = cast(
+                    List[Line], block.contained_blocks(document, [BlockTypes.Line])
+                )
                 block_lines_to_ocr = [
                     block_line
                     for block_line in block_lines
@@ -154,7 +154,10 @@ class OcrBuilder(BaseBuilder):
 
         self.recognition_model.disable_tqdm = self.disable_tqdm
         # Flatten the nested list structure for input_text parameter
-        flattened_input_text = cast(List[Optional[str]], [text for page_texts in line_original_texts for text in page_texts])
+        flattened_input_text = cast(
+            List[Optional[str]],
+            [text for page_texts in line_original_texts for text in page_texts],
+        )
         recognition_results: List[OCRResult] = self.recognition_model(
             images=images,
             task_names=[self.ocr_task_name] * len(images),
@@ -210,7 +213,11 @@ class OcrBuilder(BaseBuilder):
         self, document: Document, page: PageGroup, line: Line, new_spans: List[Span]
     ):
         old_spans = cast(List[Span], line.contained_blocks(document, [BlockTypes.Span]))
-        text_ref_matching = {span.text: span.url for span in old_spans if hasattr(span, 'url') and span.url}
+        text_ref_matching = {
+            span.text: span.url
+            for span in old_spans
+            if hasattr(span, "url") and span.url
+        }
 
         # Insert refs into new spans, since the OCR model does not (cannot) generate these
         final_new_spans = []

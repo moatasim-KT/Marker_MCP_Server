@@ -3,10 +3,9 @@ from copy import deepcopy
 from itertools import chain
 from typing import Annotated, List, Optional, Tuple
 
+import cv2
 import numpy as np
 from PIL import Image
-import cv2
-
 from surya.detection import DetectionPredictor
 from surya.ocr_error import OCRErrorPredictor
 
@@ -146,8 +145,12 @@ class LineBuilder(BaseBuilder):
             document.pages, provider.page_lines
         )
 
-        boxes_to_ocr = {page.page_id: [] for page in document.pages if page.page_id is not None}
-        page_lines = {page.page_id: [] for page in document.pages if page.page_id is not None}
+        boxes_to_ocr = {
+            page.page_id: [] for page in document.pages if page.page_id is not None
+        }
+        page_lines = {
+            page.page_id: [] for page in document.pages if page.page_id is not None
+        }
 
         layout_good = []
         for document_page, ocr_error_detection_label in zip(
@@ -175,7 +178,9 @@ class LineBuilder(BaseBuilder):
         page_images = []
         for page, good in zip(document.pages, run_detection):
             if good:
-                page_image = page.get_image(highres=False, remove_blocks=self.ocr_remove_blocks)
+                page_image = page.get_image(
+                    highres=False, remove_blocks=self.ocr_remove_blocks
+                )
                 # Filter out non-Image types
                 if isinstance(page_image, Image.Image):
                     page_images.append(page_image)
@@ -230,7 +235,11 @@ class LineBuilder(BaseBuilder):
                 document_page.text_extraction_method = "surya"
                 boxes_to_ocr[document_page.page_id].extend(detection_boxes)
 
-        ocr_lines = {document_page.page_id: [] for document_page in document.pages if document_page.page_id is not None}
+        ocr_lines = {
+            document_page.page_id: []
+            for document_page in document.pages
+            if document_page.page_id is not None
+        }
         for page_id, page_ocr_boxes in boxes_to_ocr.items():
             if page_id is None:
                 continue
@@ -295,15 +304,21 @@ class LineBuilder(BaseBuilder):
 
         if document_page.structure is None:
             return True
-        
+
         layout_blocks = [
             document_page.get_block(block) for block in document_page.structure
         ]
         layout_blocks = [
-            b for b in layout_blocks if b is not None and b.block_type not in self.excluded_for_coverage
+            b
+            for b in layout_blocks
+            if b is not None and b.block_type not in self.excluded_for_coverage
         ]
 
-        layout_bboxes = [block.polygon.bbox for block in layout_blocks if block is not None and block.polygon is not None]
+        layout_bboxes = [
+            block.polygon.bbox
+            for block in layout_blocks
+            if block is not None and block.polygon is not None
+        ]
         provider_bboxes = [line.line.polygon.bbox for line in provider_lines]
 
         if len(layout_bboxes) == 0:
@@ -372,12 +387,12 @@ class LineBuilder(BaseBuilder):
     def filter_blank_lines(self, page: PageGroup, lines: List[ProviderOutput]):
         page_size = (page.polygon.width, page.polygon.height)
         page_image = page.get_image()
-        
+
         # Check if page_image is a valid PIL Image
         if not isinstance(page_image, Image.Image):
             # If we can't get a valid image, return all lines as we can't filter them
             return lines
-            
+
         image_size = page_image.size
 
         good_lines = []
@@ -386,7 +401,7 @@ class LineBuilder(BaseBuilder):
                 page_size, image_size
             )
             line_bbox = line_polygon_rescaled.fit_to_bounds((0, 0, *image_size)).bbox
-            
+
             # Ensure bbox has exactly 4 elements (x1, y1, x2, y2)
             if len(line_bbox) >= 4:
                 crop_box = (line_bbox[0], line_bbox[1], line_bbox[2], line_bbox[3])
@@ -407,7 +422,9 @@ class LineBuilder(BaseBuilder):
             provider_lines: List[ProviderOutput] = page_provider_lines.get(
                 document_page.page_id, []
             )
-            ocr_lines: List[ProviderOutput] = page_ocr_lines.get(document_page.page_id, [])
+            ocr_lines: List[ProviderOutput] = page_ocr_lines.get(
+                document_page.page_id, []
+            )
 
             # Only one or the other will have lines
             # Filter out blank lines which come from bad provider boxes, or invisible text
